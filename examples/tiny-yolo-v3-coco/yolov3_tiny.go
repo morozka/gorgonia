@@ -93,10 +93,16 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, classesNumber, boxesPerCell int, cfgFi
 					continue
 				}
 
-				fmt.Printf(
-					"Convolution layer: Filters->%[1]d Padding->%[2]d Kernel->%[3]dx%[3]d Stride->%[4]d Activation->%[5]s Batch->%[6]d Bias->%[7]t\n",
-					filters, padding, kernelSize, stride, activation, batchNormalize, bias,
-				)
+				l := &convLayer{
+					filters:        filters,
+					padding:        padding,
+					kernelSize:     kernelSize,
+					stride:         stride,
+					activation:     activation,
+					batchNormalize: batchNormalize,
+					bias:           bias,
+				}
+				fmt.Println(l)
 				break
 			case "upsample":
 				scale := 0
@@ -106,10 +112,10 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, classesNumber, boxesPerCell int, cfgFi
 					fmt.Printf("Wrong or empty 'stride' parameter for upsampling layer: %s\n", err.Error())
 					continue
 				}
-				fmt.Printf(
-					"Upsample layer: Scale->%[1]d\n",
-					scale,
-				)
+				l := &upsampleLayer{
+					scale: scale,
+				}
+				fmt.Println(l)
 				break
 			case "route":
 				routeLayersStr, ok := buildingBlocks[i]["layers"]
@@ -145,17 +151,15 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, classesNumber, boxesPerCell int, cfgFi
 				if end > 0 {
 					end = end - i
 				}
-				if end < 0 {
-					fmt.Printf(
-						"Route layer: Start->%[1]d End->%[2]d\n",
-						i+start, i+end,
-					)
-				} else {
-					fmt.Printf(
-						"Route layer: Start->%[1]d\n",
-						i+start,
-					)
+
+				l := &routeLayer{
+					firstLayerIdx:  i + start,
+					secondLayerIdx: -1,
 				}
+				if end < 0 {
+					l.secondLayerIdx = i + end
+				}
+				fmt.Println(l)
 				break
 			case "yolo":
 				maskStr, ok := buildingBlocks[i]["mask"]
@@ -202,11 +206,12 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, classesNumber, boxesPerCell int, cfgFi
 				for a := 0; a < len(anchors); a += 2 {
 					anchorsPairs = append(anchorsPairs, [2]int{anchors[a], anchors[a+1]})
 				}
-				fmt.Printf("YOLO layer: ")
-				for m := range masks {
-					fmt.Printf("Mask->%[1]d Anchors->[%[2]d, %[3]d]  |  ", masks[m], anchorsPairs[m][0], anchorsPairs[m][1])
+
+				l := &yoloLayer{
+					masks:   masks,
+					anchors: anchorsPairs,
 				}
-				fmt.Println()
+				fmt.Println(l)
 				break
 			default:
 				break
