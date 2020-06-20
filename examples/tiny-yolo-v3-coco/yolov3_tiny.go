@@ -10,6 +10,7 @@ import (
 	"gorgonia.org/tensor"
 )
 
+// YoloV3Tiny YoloV3 tiny architecture
 type YoloV3Tiny struct {
 	g *gorgonia.ExprGraph
 
@@ -32,7 +33,8 @@ type layer struct {
 	kernels []float32
 }
 
-func NewYoloV3Tiny(g *gorgonia.ExprGraph, classesNumber, boxesPerCell int, cfgFile, weightsFile string) (*YoloV3Tiny, error) {
+// NewYoloV3Tiny Create new tiny YOLO v3
+func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, boxesPerCell int, cfgFile, weightsFile string) (*YoloV3Tiny, error) {
 
 	buildingBlocks, err := ParseConfiguration(cfgFile)
 	if err != nil {
@@ -45,6 +47,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, classesNumber, boxesPerCell int, cfgFi
 	}
 	_ = weightsData
 
+	prevFilters := 3
 	for i := range buildingBlocks {
 		layerType, ok := buildingBlocks[i]["type"]
 		if ok {
@@ -107,6 +110,19 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, classesNumber, boxesPerCell int, cfgFi
 					bias:           bias,
 				}
 				fmt.Println(l)
+
+				// conv node
+				convNode := gorgonia.NewTensor(g, tensor.Float32, 4, gorgonia.WithShape(l.filters, prevFilters, l.kernelSize, l.kernelSize), gorgonia.WithName(fmt.Sprintf("conv_%d", i)))
+				_ = convNode
+				if l.batchNormalize != 0 {
+					// @todo batch norm node
+				}
+
+				if l.activation == "leaky" {
+					// @todo leaky node
+				}
+
+				prevFilters = filters
 				break
 			case "upsample":
 				scale := 0
@@ -120,6 +136,9 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, classesNumber, boxesPerCell int, cfgFi
 					scale: scale,
 				}
 				fmt.Println(l)
+
+				// @todo upsample node
+
 				break
 			case "route":
 				routeLayersStr, ok := buildingBlocks[i]["layers"]
@@ -164,6 +183,10 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, classesNumber, boxesPerCell int, cfgFi
 					l.secondLayerIdx = i + end
 				}
 				fmt.Println(l)
+
+				// @todo upsample node
+				// @todo evaluate 'prevFilters'
+
 				break
 			case "yolo":
 				maskStr, ok := buildingBlocks[i]["mask"]
@@ -216,6 +239,9 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, classesNumber, boxesPerCell int, cfgFi
 					anchors: anchorsPairs,
 				}
 				fmt.Println(l)
+
+				// @todo detection node? or just flow?
+
 				break
 			default:
 				break
