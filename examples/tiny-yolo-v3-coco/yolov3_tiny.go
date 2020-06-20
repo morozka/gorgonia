@@ -305,6 +305,8 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 			if layer.batchNormalize > 0 {
 				// fmt.Printf("module # %d %s\n", i, layerType)
 				//@todo load weights/biases and etc.
+			} else {
+				//@todo load weights/biases and etc.
 			}
 		}
 	}
