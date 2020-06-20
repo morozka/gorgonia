@@ -13,3 +13,7 @@ func (l *routeLayer) String() string {
 	}
 	return fmt.Sprintf("Route layer: Start->%[1]d", l.firstLayerIdx)
 }
+
+func (l *routeLayer) Type() string {
+	return "route"
+}

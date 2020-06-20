@@ -23,15 +23,15 @@ type YoloV3Tiny struct {
 	kernels map[string][]float32
 }
 
-type layer struct {
-	name    string
-	shape   tensor.Shape
-	biases  []float32
-	gammas  []float32
-	means   []float32
-	vars    []float32
-	kernels []float32
-}
+// type layer struct {
+// 	name    string
+// 	shape   tensor.Shape
+// 	biases  []float32
+// 	gammas  []float32
+// 	means   []float32
+// 	vars    []float32
+// 	kernels []float32
+// }
 
 // NewYoloV3Tiny Create new tiny YOLO v3
 func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, boxesPerCell int, cfgFile, weightsFile string) (*YoloV3Tiny, error) {
@@ -48,6 +48,8 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 
 	_ = weightsData
 
+	fmt.Println("Loading network...")
+	layers := []*layerN{}
 	prevFilters := 3
 	blocks := buildingBlocks[1:]
 	for i := range blocks {
@@ -102,7 +104,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					continue
 				}
 
-				l := &convLayer{
+				var l layerN = &convLayer{
 					filters:        filters,
 					padding:        pad,
 					kernelSize:     kernelSize,
@@ -111,16 +113,17 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					batchNormalize: batchNormalize,
 					bias:           bias,
 				}
+				layers = append(layers, &l)
 				fmt.Println(l)
 
 				// conv node
-				convNode := gorgonia.NewTensor(g, tensor.Float32, 4, gorgonia.WithShape(l.filters, prevFilters, l.kernelSize, l.kernelSize), gorgonia.WithName(fmt.Sprintf("conv_%d", i)))
+				convNode := gorgonia.NewTensor(g, tensor.Float32, 4, gorgonia.WithShape(filters, prevFilters, kernelSize, kernelSize), gorgonia.WithName(fmt.Sprintf("conv_%d", i)))
 				_ = convNode
-				if l.batchNormalize != 0 {
+				if batchNormalize != 0 {
 					// @todo batch norm node
 				}
 
-				if l.activation == "leaky" {
+				if activation == "leaky" {
 					// @todo leaky node
 				}
 
@@ -134,9 +137,11 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					fmt.Printf("Wrong or empty 'stride' parameter for upsampling layer: %s\n", err.Error())
 					continue
 				}
-				l := &upsampleLayer{
+
+				var l layerN = &upsampleLayer{
 					scale: scale,
 				}
+				layers = append(layers, &l)
 				fmt.Println(l)
 
 				// @todo upsample node
@@ -178,14 +183,17 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					end = end - i
 				}
 
-				l := &routeLayer{
+				l := routeLayer{
 					firstLayerIdx:  i + start,
 					secondLayerIdx: -1,
 				}
 				if end < 0 {
 					l.secondLayerIdx = i + end
 				}
-				fmt.Println(l)
+
+				var ll layerN = &l
+				layers = append(layers, &ll)
+				fmt.Println(ll)
 
 				// @todo upsample node
 				// @todo evaluate 'prevFilters'
@@ -241,23 +249,65 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					selectedAnchors = append(selectedAnchors, anchorsPairs[masks[m]])
 				}
 
-				l := &yoloLayer{
+				var l layerN = &yoloLayer{
 					masks:   masks,
 					anchors: selectedAnchors,
 				}
+				layers = append(layers, &l)
 				fmt.Println(l)
 
 				// @todo detection node? or just flow?
 
 				break
+			case "maxpool":
+				sizeStr, ok := blocks[i]["size"]
+				if !ok {
+					fmt.Printf("No field 'size' for maxpooling layer")
+					continue
+				}
+				size, err := strconv.Atoi(sizeStr)
+				if err != nil {
+					fmt.Printf("'size' parameter for maxpooling layer should be an integer: %s\n", err.Error())
+					continue
+				}
+				strideStr, ok := blocks[i]["stride"]
+				if !ok {
+					fmt.Printf("No field 'stride' for maxpooling layer")
+					continue
+				}
+				stride, err := strconv.Atoi(strideStr)
+				if err != nil {
+					fmt.Printf("'size' parameter for maxpooling layer should be an integer: %s\n", err.Error())
+					continue
+				}
+				var l layerN = &maxPoolingLayer{
+					size:   size,
+					stride: stride,
+				}
+				layers = append(layers, &l)
+				fmt.Println(l)
+				break
 			default:
 				break
 			}
 		}
-
 	}
+
+	fmt.Println("Loading weights...")
 	lastIdx := 5 // skip first 5 values
 	epsilon := float32(0.000001)
+	for i := range layers {
+		l := *layers[i]
+		layerType := l.Type()
+		// Ignore everything except convolutional layers
+		if layerType == "convolutional" {
+			layer := l.(*convLayer)
+			if layer.batchNormalize > 0 {
+				// fmt.Printf("module # %d %s\n", i, layerType)
+				//@todo load weights/biases and etc.
+			}
+		}
+	}
 
 	_, _ = lastIdx, epsilon
 	return nil, nil

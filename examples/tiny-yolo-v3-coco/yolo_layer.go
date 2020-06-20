@@ -17,3 +17,7 @@ func (l *yoloLayer) String() string {
 	}
 	return str
 }
+
+func (l *yoloLayer) Type() string {
+	return "yolo"
+}

@@ -18,3 +18,7 @@ func (l *convLayer) String() string {
 		l.filters, l.padding, l.kernelSize, l.stride, l.activation, l.batchNormalize, l.bias,
 	)
 }
+
+func (l *convLayer) Type() string {
+	return "convolutional"
+}
