@@ -80,15 +80,15 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, classesNumber, boxesPerCell int, cfgFi
 					fmt.Printf("Wrong or empty 'pad' parameter for convolution layer: %s\n", err.Error())
 					continue
 				}
-				pad := 0
-				if padding != 0 {
-					pad = (kernelSize - 1) / 2
-				}
 				kernelSizeStr, ok := buildingBlocks[i]["size"]
 				kernelSize, err = strconv.Atoi(kernelSizeStr)
 				if !ok || err != nil {
 					fmt.Printf("Wrong or empty 'size' parameter for convolution layer: %s\n", err.Error())
 					continue
+				}
+				pad := 0
+				if padding != 0 {
+					pad = (kernelSize - 1) / 2
 				}
 				strideStr, ok := buildingBlocks[i]["stride"]
 				stride, err = strconv.Atoi(strideStr)
