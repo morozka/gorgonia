@@ -45,11 +45,13 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 	if err != nil {
 		return nil, errors.Wrap(err, "Can't read darknet weights")
 	}
+
 	_ = weightsData
 
 	prevFilters := 3
-	for i := range buildingBlocks {
-		layerType, ok := buildingBlocks[i]["type"]
+	blocks := buildingBlocks[1:]
+	for i := range blocks {
+		layerType, ok := blocks[i]["type"]
 		if ok {
 			switch layerType {
 			case "convolutional":
@@ -60,30 +62,30 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				batchNormalize := 0
 				bias := false
 				activation := "activation"
-				activation, ok := buildingBlocks[i]["activation"]
+				activation, ok := blocks[i]["activation"]
 				if !ok {
 					fmt.Printf("No field 'activation' for convolution layer")
 					continue
 				}
-				batchNormalizeStr, ok := buildingBlocks[i]["batch_normalize"]
+				batchNormalizeStr, ok := blocks[i]["batch_normalize"]
 				batchNormalize, err := strconv.Atoi(batchNormalizeStr)
 				if !ok || err != nil {
 					batchNormalize = 0
 					bias = true
 				}
-				filtersStr, ok := buildingBlocks[i]["filters"]
+				filtersStr, ok := blocks[i]["filters"]
 				filters, err = strconv.Atoi(filtersStr)
 				if !ok || err != nil {
 					fmt.Printf("Wrong or empty 'filters' parameter for convolution layer: %s\n", err.Error())
 					continue
 				}
-				paddingStr, ok := buildingBlocks[i]["pad"]
+				paddingStr, ok := blocks[i]["pad"]
 				padding, err = strconv.Atoi(paddingStr)
 				if !ok || err != nil {
 					fmt.Printf("Wrong or empty 'pad' parameter for convolution layer: %s\n", err.Error())
 					continue
 				}
-				kernelSizeStr, ok := buildingBlocks[i]["size"]
+				kernelSizeStr, ok := blocks[i]["size"]
 				kernelSize, err = strconv.Atoi(kernelSizeStr)
 				if !ok || err != nil {
 					fmt.Printf("Wrong or empty 'size' parameter for convolution layer: %s\n", err.Error())
@@ -93,7 +95,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				if padding != 0 {
 					pad = (kernelSize - 1) / 2
 				}
-				strideStr, ok := buildingBlocks[i]["stride"]
+				strideStr, ok := blocks[i]["stride"]
 				stride, err = strconv.Atoi(strideStr)
 				if !ok || err != nil {
 					fmt.Printf("Wrong or empty 'stride' parameter for convolution layer: %s\n", err.Error())
@@ -126,7 +128,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				break
 			case "upsample":
 				scale := 0
-				scaleStr, ok := buildingBlocks[i]["stride"]
+				scaleStr, ok := blocks[i]["stride"]
 				scale, err = strconv.Atoi(scaleStr)
 				if !ok || err != nil {
 					fmt.Printf("Wrong or empty 'stride' parameter for upsampling layer: %s\n", err.Error())
@@ -141,7 +143,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 
 				break
 			case "route":
-				routeLayersStr, ok := buildingBlocks[i]["layers"]
+				routeLayersStr, ok := blocks[i]["layers"]
 				if !ok {
 					fmt.Printf("No field 'layers' for route layer")
 					continue
@@ -168,6 +170,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 						continue
 					}
 				}
+
 				if start > 0 {
 					start = start - i
 				}
@@ -189,7 +192,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 
 				break
 			case "yolo":
-				maskStr, ok := buildingBlocks[i]["mask"]
+				maskStr, ok := blocks[i]["mask"]
 				if !ok {
 					fmt.Printf("No field 'mask' for YOLO layer")
 					continue
@@ -207,7 +210,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 						fmt.Printf("Each element of 'mask' parameter for yolo layer should be an integer: %s\n", err.Error())
 					}
 				}
-				anchorsStr, ok := buildingBlocks[i]["anchors"]
+				anchorsStr, ok := blocks[i]["anchors"]
 				if !ok {
 					fmt.Printf("No field 'anchors' for YOLO layer")
 					continue
@@ -233,10 +236,14 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				for a := 0; a < len(anchors); a += 2 {
 					anchorsPairs = append(anchorsPairs, [2]int{anchors[a], anchors[a+1]})
 				}
+				selectedAnchors := [][2]int{}
+				for m := range masks {
+					selectedAnchors = append(selectedAnchors, anchorsPairs[masks[m]])
+				}
 
 				l := &yoloLayer{
 					masks:   masks,
-					anchors: anchorsPairs,
+					anchors: selectedAnchors,
 				}
 				fmt.Println(l)
 
