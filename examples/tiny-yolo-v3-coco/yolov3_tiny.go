@@ -48,9 +48,11 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 
 	fmt.Println("Loading network...")
 	layers := []*layerN{}
+	outputFilters := []int{}
 	prevFilters := 3
 	blocks := buildingBlocks[1:]
 	for i := range blocks {
+		filtersIdx := 0
 		layerType, ok := blocks[i]["type"]
 		if ok {
 			switch layerType {
@@ -126,7 +128,8 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					// @todo leaky node
 				}
 
-				prevFilters = filters
+				filtersIdx = filters
+				// prevFilters = filters
 				break
 			case "upsample":
 				scale := 0
@@ -145,6 +148,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 
 				// @todo upsample node
 
+				filtersIdx = prevFilters
 				break
 			case "route":
 				routeLayersStr, ok := blocks[i]["layers"]
@@ -188,6 +192,9 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				}
 				if end < 0 {
 					l.secondLayerIdx = i + end
+					filtersIdx = outputFilters[i+start] + outputFilters[i+end]
+				} else {
+					filtersIdx = outputFilters[i+start]
 				}
 
 				var ll layerN = &l
@@ -257,6 +264,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 
 				// @todo detection node? or just flow?
 
+				filtersIdx = prevFilters
 				break
 			case "maxpool":
 				sizeStr, ok := blocks[i]["size"]
@@ -285,11 +293,16 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				}
 				layers = append(layers, &l)
 				fmt.Println(l)
+
+				filtersIdx = prevFilters
 				break
 			default:
+				fmt.Println("Impossible")
 				break
 			}
 		}
+		prevFilters = filtersIdx
+		outputFilters = append(outputFilters, filtersIdx)
 	}
 
 	fmt.Println("Loading weights...")
