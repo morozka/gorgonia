@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"gorgonia.org/tensor"
+	"gorgonia.org/gorgonia"
 )
 
 type convLayer struct {
@@ -14,7 +14,10 @@ type convLayer struct {
 	activation     string
 	batchNormalize int
 	bias           bool
-	shape          tensor.Shape
+
+	convNode       *gorgonia.Node
+	batchNormNode  *gorgonia.Node
+	activationNode *gorgonia.Node
 }
 
 func (l *convLayer) String() string {

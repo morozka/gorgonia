@@ -34,7 +34,7 @@ type YoloV3Tiny struct {
 // }
 
 // NewYoloV3Tiny Create new tiny YOLO v3
-func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, boxesPerCell int, cfgFile, weightsFile string) (*YoloV3Tiny, error) {
+func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, boxesPerCell int, leakyCoef float64, cfgFile, weightsFile string) (*YoloV3Tiny, error) {
 
 	buildingBlocks, err := ParseConfiguration(cfgFile)
 	if err != nil {
@@ -52,6 +52,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 	prevFilters := 3
 	blocks := buildingBlocks[1:]
 	for i := range blocks {
+
 		filtersIdx := 0
 		layerType, ok := blocks[i]["type"]
 		if ok {
@@ -104,7 +105,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					continue
 				}
 
-				var l layerN = &convLayer{
+				ll := &convLayer{
 					filters:        filters,
 					padding:        pad,
 					kernelSize:     kernelSize,
@@ -112,24 +113,25 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					activation:     activation,
 					batchNormalize: batchNormalize,
 					bias:           bias,
-					shape:          tensor.Shape{filters, prevFilters, kernelSize, kernelSize},
+					// shape:          tensor.Shape{filters, prevFilters, kernelSize, kernelSize},
 				}
+				// conv node
+				convNode := gorgonia.NewTensor(g, tensor.Float32, 4, gorgonia.WithShape(filters, prevFilters, kernelSize, kernelSize), gorgonia.WithName(fmt.Sprintf("conv_%d", i)))
+				ll.convNode = convNode
+				if batchNormalize != 0 {
+					batchNormNode := gorgonia.NewTensor(g, tensor.Float32, 1, gorgonia.WithShape(filters), gorgonia.WithName(fmt.Sprintf("batch_norm_%d", i)))
+					ll.batchNormNode = batchNormNode
+				}
+				if activation == "leaky" {
+					leakyNode := gorgonia.NewTensor(g, tensor.Float32, 4, gorgonia.WithShape(convNode.Shape()...), gorgonia.WithName(fmt.Sprintf("leaky_%d", i)))
+					ll.activationNode = leakyNode
+				}
+
+				var l layerN = ll
 				layers = append(layers, &l)
 				fmt.Println(l)
 
-				// conv node
-				convNode := gorgonia.NewTensor(g, tensor.Float32, 4, gorgonia.WithShape(filters, prevFilters, kernelSize, kernelSize), gorgonia.WithName(fmt.Sprintf("conv_%d", i)))
-				_ = convNode
-				if batchNormalize != 0 {
-					// @todo batch norm node
-				}
-
-				if activation == "leaky" {
-					// @todo leaky node
-				}
-
 				filtersIdx = filters
-				// prevFilters = filters
 				break
 			case "upsample":
 				scale := 0
@@ -316,8 +318,8 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 		// Ignore everything except convolutional layers
 		if layerType == "convolutional" {
 			layer := l.(*convLayer)
-			if layer.batchNormalize > 0 {
-				biasesNum := layer.shape[0]
+			if layer.batchNormalize > 0 && layer.batchNormNode != nil {
+				biasesNum := layer.batchNormNode.Shape()[0]
 
 				biases := weightsData[ptr : ptr+biasesNum]
 				_ = biases
@@ -337,14 +339,14 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 
 				//@todo load weights/biases and etc.
 			} else {
-				biasesNum := layer.shape[0]
+				biasesNum := layer.convNode.Shape()[0]
 				convBiases := weightsData[ptr : ptr+biasesNum]
 				_ = convBiases
 				ptr += biasesNum
 				//@todo load weights/biases and etc.
 			}
 
-			weightsNumel := layer.shape.TotalSize()
+			weightsNumel := layer.convNode.Shape().TotalSize()
 
 			ptr += weightsNumel
 		}
