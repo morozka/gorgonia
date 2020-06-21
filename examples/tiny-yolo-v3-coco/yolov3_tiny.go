@@ -46,8 +46,6 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 		return nil, errors.Wrap(err, "Can't read darknet weights")
 	}
 
-	_ = weightsData
-
 	fmt.Println("Loading network...")
 	layers := []*layerN{}
 	prevFilters := 3
@@ -112,6 +110,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					activation:     activation,
 					batchNormalize: batchNormalize,
 					bias:           bias,
+					shape:          tensor.Shape{filters, prevFilters, kernelSize, kernelSize},
 				}
 				layers = append(layers, &l)
 				fmt.Println(l)
@@ -296,6 +295,8 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 	fmt.Println("Loading weights...")
 	lastIdx := 5 // skip first 5 values
 	epsilon := float32(0.000001)
+
+	ptr := 0
 	for i := range layers {
 		l := *layers[i]
 		layerType := l.Type()
@@ -303,11 +304,36 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 		if layerType == "convolutional" {
 			layer := l.(*convLayer)
 			if layer.batchNormalize > 0 {
-				// fmt.Printf("module # %d %s\n", i, layerType)
+				biasesNum := layer.shape[0]
+
+				biases := weightsData[ptr : ptr+biasesNum]
+				_ = biases
+				ptr += biasesNum
+
+				weights := weightsData[ptr : ptr+biasesNum]
+				_ = weights
+				ptr += biasesNum
+
+				means := weightsData[ptr : ptr+biasesNum]
+				_ = means
+				ptr += biasesNum
+
+				vars := weightsData[ptr : ptr+biasesNum]
+				_ = vars
+				ptr += biasesNum
+
 				//@todo load weights/biases and etc.
 			} else {
+				biasesNum := layer.shape[0]
+				convBiases := weightsData[ptr : ptr+biasesNum]
+				_ = convBiases
+				ptr += biasesNum
 				//@todo load weights/biases and etc.
 			}
+
+			weightsNumel := layer.shape.TotalSize()
+
+			ptr += weightsNumel
 		}
 	}
 

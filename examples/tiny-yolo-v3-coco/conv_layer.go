@@ -1,6 +1,10 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+
+	"gorgonia.org/tensor"
+)
 
 type convLayer struct {
 	filters        int
@@ -10,6 +14,7 @@ type convLayer struct {
 	activation     string
 	batchNormalize int
 	bias           bool
+	shape          tensor.Shape
 }
 
 func (l *convLayer) String() string {
