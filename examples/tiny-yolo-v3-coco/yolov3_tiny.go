@@ -7,7 +7,6 @@ import (
 
 	"github.com/pkg/errors"
 	"gorgonia.org/gorgonia"
-	"gorgonia.org/tensor"
 )
 
 // YoloV3Tiny YoloV3 tiny architecture
@@ -23,20 +22,101 @@ type YoloV3Tiny struct {
 	kernels map[string][]float32
 }
 
-// type layer struct {
-// 	name    string
-// 	shape   tensor.Shape
-// 	biases  []float32
-// 	gammas  []float32
-// 	means   []float32
-// 	vars    []float32
-// 	kernels []float32
-// }
+var i int //layer counter
+
+type layer interface {
+	Output() *gorgonia.Node
+	LoadableParams() []*gorgonia.Node
+	GammaBeta() (*gorgonia.Node, *gorgonia.Node)
+}
+
+type convlayer struct {
+	bias, scale, kernel *gorgonia.Node
+
+	output, gamma, beta *gorgonia.Node
+}
+
+func (c convlayer) Output() *gorgonia.Node {
+	return c.output
+}
+
+func (c convlayer) LoadableParams() []*gorgonia.Node {
+	return []*gorgonia.Node{c.kernel, c.bias, c.scale}
+}
+
+func (c convlayer) GammaBeta() (*gorgonia.Node, *gorgonia.Node) {
+	return c.gamma, c.beta
+}
+
+func convolutional(input *gorgonia.Node, block map[string]string) (l layer, err error) {
+	g := input.Graph()
+	filters, padding, size, stride, batchNormalize := 0, 0, 0, 0, 0
+	var batchout, gamma, beta, scale, bias, output *gorgonia.Node
+	activation, ok := block["activation"]
+	if !ok {
+		return nil, errors.New("No field 'activation' for convolution layer")
+	}
+	batchNormalizeStr, ok := block["batch_normalize"]
+	batchNormalize, err = strconv.Atoi(batchNormalizeStr)
+	if !ok || err != nil {
+		batchNormalize = 0
+	}
+	filtersStr, ok := block["filters"]
+	filters, err = strconv.Atoi(filtersStr)
+	if !ok || err != nil {
+		return nil, errors.Wrap(err, "Wrong or empty 'filters' parameter for convolution layer")
+	}
+	paddingStr, ok := block["pad"]
+	padding, err = strconv.Atoi(paddingStr)
+	if !ok || err != nil {
+		return nil, errors.Wrap(err, "Wrong or empty 'pad' parameter for convolution layer")
+	}
+	kernelSizeStr, ok := block["size"]
+	size, err = strconv.Atoi(kernelSizeStr)
+	if !ok || err != nil {
+		return nil, errors.Wrap(err, "Wrong or empty 'size' parameter for convolution layer")
+	}
+	pad := 0
+	if padding != 0 {
+		pad = (size - 1) / 2
+	}
+	strideStr, ok := block["stride"]
+	stride, err = strconv.Atoi(strideStr)
+	if !ok || err != nil {
+		return nil, errors.Wrap(err, "Wrong or empty 'stride' parameter for convolution layer")
+	}
+	kernel := gorgonia.NewTensor(g, gorgonia.Float64, 4, gorgonia.WithShape(1, filters, size, size), gorgonia.WithName(fmt.Sprint("kernel_%v", i)))
+	// conv node
+	convout := gorgonia.Must(gorgonia.Conv2d(input, kernel, kernel.Shape(), []int{pad, pad}, []int{stride, stride}, []int{1, 1}))
+	if batchNormalize != 0 {
+		scale = gorgonia.NewTensor(g, gorgonia.Float64, 1, gorgonia.WithShape(filters), gorgonia.WithName(fmt.Sprintf("scale_%v", i)))
+		bias = gorgonia.NewTensor(g, gorgonia.Float64, 1, gorgonia.WithShape(filters), gorgonia.WithName(fmt.Sprintf("bias_%v", i)))
+		if batchout, gamma, beta, _, err = gorgonia.BatchNorm(convout, scale, bias, 0.1, 10e-5); err != nil {
+			return nil, err
+		}
+	}
+	if activation == "leaky" {
+		// leakyNode := gorgonia.NewTensor(g, tensor.Float32, 4, gorgonia.WithShape(convNode.Shape()...), gorgonia.WithName(fmt.Sprintf("leaky_%d", i)))
+		actout, err := gorgonia.LeakyRelu(batchout, 0.1)
+		if err != nil {
+			return nil, err
+		}
+		output = actout
+	}
+	return &convlayer{
+		bias:   bias,
+		scale:  scale,
+		kernel: kernel,
+		gamma:  gamma,
+		beta:   beta,
+		output: output,
+	}, nil
+}
 
 // NewYoloV3Tiny Create new tiny YOLO v3
 func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, boxesPerCell int, leakyCoef float64, cfgFile, weightsFile string) (*YoloV3Tiny, error) {
-
 	buildingBlocks, err := ParseConfiguration(cfgFile)
+	fmt.Println(buildingBlocks)
 	if err != nil {
 		return nil, errors.Wrap(err, "Can't read darknet configuration")
 	}
@@ -45,93 +125,26 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 	if err != nil {
 		return nil, errors.Wrap(err, "Can't read darknet weights")
 	}
+	var nn []layer
 
+	current := input
 	fmt.Println("Loading network...")
 	layers := []*layerN{}
 	outputFilters := []int{}
 	prevFilters := 3
 	blocks := buildingBlocks[1:]
-	for i := range blocks {
-
+	for i = range blocks {
 		filtersIdx := 0
 		layerType, ok := blocks[i]["type"]
 		if ok {
 			switch layerType {
 			case "convolutional":
-				filters := 0
-				padding := 0
-				kernelSize := 0
-				stride := 0
-				batchNormalize := 0
-				bias := false
-				activation := "activation"
-				activation, ok := blocks[i]["activation"]
-				if !ok {
-					fmt.Printf("No field 'activation' for convolution layer")
-					continue
+				conv, ok := convolutional(current, blocks[i])
+				if ok != nil {
+					panic(errors.Wrap(ok, "Error in covolution layer!"))
 				}
-				batchNormalizeStr, ok := blocks[i]["batch_normalize"]
-				batchNormalize, err := strconv.Atoi(batchNormalizeStr)
-				if !ok || err != nil {
-					batchNormalize = 0
-					bias = true
-				}
-				filtersStr, ok := blocks[i]["filters"]
-				filters, err = strconv.Atoi(filtersStr)
-				if !ok || err != nil {
-					fmt.Printf("Wrong or empty 'filters' parameter for convolution layer: %s\n", err.Error())
-					continue
-				}
-				paddingStr, ok := blocks[i]["pad"]
-				padding, err = strconv.Atoi(paddingStr)
-				if !ok || err != nil {
-					fmt.Printf("Wrong or empty 'pad' parameter for convolution layer: %s\n", err.Error())
-					continue
-				}
-				kernelSizeStr, ok := blocks[i]["size"]
-				kernelSize, err = strconv.Atoi(kernelSizeStr)
-				if !ok || err != nil {
-					fmt.Printf("Wrong or empty 'size' parameter for convolution layer: %s\n", err.Error())
-					continue
-				}
-				pad := 0
-				if padding != 0 {
-					pad = (kernelSize - 1) / 2
-				}
-				strideStr, ok := blocks[i]["stride"]
-				stride, err = strconv.Atoi(strideStr)
-				if !ok || err != nil {
-					fmt.Printf("Wrong or empty 'stride' parameter for convolution layer: %s\n", err.Error())
-					continue
-				}
-
-				ll := &convLayer{
-					filters:        filters,
-					padding:        pad,
-					kernelSize:     kernelSize,
-					stride:         stride,
-					activation:     activation,
-					batchNormalize: batchNormalize,
-					bias:           bias,
-					// shape:          tensor.Shape{filters, prevFilters, kernelSize, kernelSize},
-				}
-				// conv node
-				convNode := gorgonia.NewTensor(g, tensor.Float32, 4, gorgonia.WithShape(filters, prevFilters, kernelSize, kernelSize), gorgonia.WithName(fmt.Sprintf("conv_%d", i)))
-				ll.convNode = convNode
-				if batchNormalize != 0 {
-					batchNormNode := gorgonia.NewTensor(g, tensor.Float32, 1, gorgonia.WithShape(filters), gorgonia.WithName(fmt.Sprintf("batch_norm_%d", i)))
-					ll.batchNormNode = batchNormNode
-				}
-				if activation == "leaky" {
-					leakyNode := gorgonia.NewTensor(g, tensor.Float32, 4, gorgonia.WithShape(convNode.Shape()...), gorgonia.WithName(fmt.Sprintf("leaky_%d", i)))
-					ll.activationNode = leakyNode
-				}
-
-				var l layerN = ll
-				layers = append(layers, &l)
-				fmt.Println(l)
-
-				filtersIdx = filters
+				nn = append(nn, conv)
+				current = conv.Output()
 				break
 			case "upsample":
 				scale := 0
