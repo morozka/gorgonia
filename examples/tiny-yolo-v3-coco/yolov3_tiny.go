@@ -7,10 +7,11 @@ import (
 
 	"github.com/pkg/errors"
 	"gorgonia.org/gorgonia"
+	"gorgonia.org/tensor"
 )
 
 // YoloV3Tiny YoloV3 tiny architecture
-type YoloV3Tiny struct {
+/*type YoloV3Tiny struct {
 	g *gorgonia.ExprGraph
 
 	out *gorgonia.Node
@@ -20,33 +21,9 @@ type YoloV3Tiny struct {
 	means   map[string][]float32
 	vars    map[string][]float32
 	kernels map[string][]float32
-}
+}*/
 
-var i int //layer counter
-
-type layer interface {
-	Output() *gorgonia.Node
-	LoadableParams() []*gorgonia.Node
-	GammaBeta() (*gorgonia.Node, *gorgonia.Node)
-}
-
-type convlayer struct {
-	bias, scale, kernel *gorgonia.Node
-
-	output, gamma, beta *gorgonia.Node
-}
-
-func (c convlayer) Output() *gorgonia.Node {
-	return c.output
-}
-
-func (c convlayer) LoadableParams() []*gorgonia.Node {
-	return []*gorgonia.Node{c.kernel, c.bias, c.scale}
-}
-
-func (c convlayer) GammaBeta() (*gorgonia.Node, *gorgonia.Node) {
-	return c.gamma, c.beta
-}
+var layeri int //layer counter
 
 func convolutional(input *gorgonia.Node, block map[string]string) (l layer, err error) {
 	g := input.Graph()
@@ -86,7 +63,6 @@ func convolutional(input *gorgonia.Node, block map[string]string) (l layer, err 
 		return nil, errors.Wrap(err, "Wrong or empty 'stride' parameter for convolution layer")
 	}
 	kernel := gorgonia.NewTensor(g, gorgonia.Float64, 4, gorgonia.WithShape(1, filters, size, size), gorgonia.WithName(fmt.Sprint("kernel_%v", i)))
-	// conv node
 	convout := gorgonia.Must(gorgonia.Conv2d(input, kernel, kernel.Shape(), []int{pad, pad}, []int{stride, stride}, []int{1, 1}))
 	if batchNormalize != 0 {
 		scale = gorgonia.NewTensor(g, gorgonia.Float64, 1, gorgonia.WithShape(filters), gorgonia.WithName(fmt.Sprintf("scale_%v", i)))
@@ -113,6 +89,77 @@ func convolutional(input *gorgonia.Node, block map[string]string) (l layer, err 
 	}, nil
 }
 
+func maxpool(input *gorgonia.Node, block map[string]string) (l layer, err error) {
+	sizeStr, ok := block["size"]
+	if !ok {
+		return nil, errors.Errorf("No field 'size' for maxpooling layer")
+	}
+	size, err := strconv.Atoi(sizeStr)
+	if err != nil {
+		return nil, errors.Wrap(err, "'size' parameter for maxpooling layer should be an integer")
+	}
+	strideStr, ok := block["stride"]
+	if !ok {
+		return nil, errors.Errorf("No field 'stride' for maxpooling layer")
+	}
+	stride, err := strconv.Atoi(strideStr)
+	if err != nil {
+		return nil, errors.Wrap(err, "'size' parameter for maxpooling layer should be an integer")
+	}
+	retVal := gorgonia.Must(gorgonia.MaxPool2D(input, tensor.Shape{size, size}, []int{1, 1}, []int{stride, stride}))
+	return &maxpoollayer{
+		output: retVal,
+	}, nil
+}
+
+func upsample(input *gorgonia.Node, block map[string]string) (l layer, err error) {
+	scaleStr, ok := block["stride"]
+	scale, err := strconv.Atoi(scaleStr)
+	if !ok || err != nil {
+		return nil, errors.Wrap(err, "Wrong or empty 'stride' parameter for upsampling layer")
+	}
+	retVal := gorgonia.Must(gorgonia.Upsample2D(input, scale))
+	return &upsamplelayer{
+		output: retVal,
+	}, nil
+}
+
+func route(input *gorgonia.Node, block map[string]string, nn []layer) (l layer, err error) {
+	routeLayersStr, ok := block["layers"]
+	if !ok {
+		return nil, errors.Errorf("No field 'layers' for route layer")
+	}
+	layersSplit := strings.Split(routeLayersStr, ",")
+	if len(layersSplit) < 1 {
+		return nil, errors.Errorf("Something wrong with route layer. Check if it has one array item atleast")
+	}
+	for l := range layersSplit {
+		layersSplit[l] = strings.TrimSpace(layersSplit[l])
+	}
+
+	nodes := make([]*gorgonia.Node, len(layersSplit)+1)
+	nodes[0] = input
+	for i := range layersSplit {
+		ind, err := strconv.Atoi(layersSplit[i])
+		if err != nil {
+			return nil, errors.Wrap(err, "Each first element of 'layers' parameter for route layer should be an integer")
+		}
+		if ind == 0 {
+			return nil, errors.Errorf("Route cannot concat it's output")
+		}
+
+		if ind < 0 {
+			nodes[i+1] = nn[layeri-ind].Output()
+		} else {
+			nodes[i+1] = nn[ind].Output()
+		}
+
+	}
+	retVal := gorgonia.Must(gorgonia.Concat(0, nodes...))
+
+	return &routelayer{output: retVal}, nil
+}
+
 // NewYoloV3Tiny Create new tiny YOLO v3
 func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, boxesPerCell int, leakyCoef float64, cfgFile, weightsFile string) (*YoloV3Tiny, error) {
 	buildingBlocks, err := ParseConfiguration(cfgFile)
@@ -133,95 +180,45 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 	outputFilters := []int{}
 	prevFilters := 3
 	blocks := buildingBlocks[1:]
-	for i = range blocks {
+	for layeri = range blocks {
 		filtersIdx := 0
 		layerType, ok := blocks[i]["type"]
 		if ok {
 			switch layerType {
 			case "convolutional":
-				conv, ok := convolutional(current, blocks[i])
+				conv, ok := convolutional(current, blocks[layeri])
 				if ok != nil {
 					panic(errors.Wrap(ok, "Error in covolution layer!"))
 				}
 				nn = append(nn, conv)
 				current = conv.Output()
 				break
+			case "maxpool":
+				mxpl, err := maxpool(current, blocks[layeri])
+				if err != nil {
+					panic(err)
+				}
+				nn = append(nn, mxpl)
+				current = mxpl.Output()
+				break
 			case "upsample":
-				scale := 0
-				scaleStr, ok := blocks[i]["stride"]
-				scale, err = strconv.Atoi(scaleStr)
-				if !ok || err != nil {
-					fmt.Printf("Wrong or empty 'stride' parameter for upsampling layer: %s\n", err.Error())
-					continue
+				ups, err := upsample(current, blocks[layeri])
+				if err != nil {
+					panic(err)
 				}
-
-				var l layerN = &upsampleLayer{
-					scale: scale,
-				}
-				layers = append(layers, &l)
-				fmt.Println(l)
-
-				// @todo upsample node
-
-				filtersIdx = prevFilters
+				nn = append(nn, ups)
+				current = ups.Output()
 				break
 			case "route":
-				routeLayersStr, ok := blocks[i]["layers"]
-				if !ok {
-					fmt.Printf("No field 'layers' for route layer")
-					continue
-				}
-				layersSplit := strings.Split(routeLayersStr, ",")
-				if len(layersSplit) < 1 {
-					fmt.Printf("Something wrong with route layer. Check if it has one array item atleast")
-					continue
-				}
-				for l := range layersSplit {
-					layersSplit[l] = strings.TrimSpace(layersSplit[l])
-				}
-				start := 0
-				end := 0
-				start, err := strconv.Atoi(layersSplit[0])
+				rout, err := upsample(current, blocks[layeri])
 				if err != nil {
-					fmt.Printf("Each first element of 'layers' parameter for route layer should be an integer: %s\n", err.Error())
-					continue
+					panic(err)
 				}
-				if len(layersSplit) > 1 {
-					end, err = strconv.Atoi(layersSplit[1])
-					if err != nil {
-						fmt.Printf("Each second element of 'layers' parameter for route layer should be an integer: %s\n", err.Error())
-						continue
-					}
-				}
-
-				if start > 0 {
-					start = start - i
-				}
-				if end > 0 {
-					end = end - i
-				}
-
-				l := routeLayer{
-					firstLayerIdx:  i + start,
-					secondLayerIdx: -1,
-				}
-				if end < 0 {
-					l.secondLayerIdx = i + end
-					filtersIdx = outputFilters[i+start] + outputFilters[i+end]
-				} else {
-					filtersIdx = outputFilters[i+start]
-				}
-
-				var ll layerN = &l
-				layers = append(layers, &ll)
-				fmt.Println(ll)
-
-				// @todo upsample node
-				// @todo evaluate 'prevFilters'
-
+				nn = append(nn, rout)
+				current = rout.Output()
 				break
 			case "yolo":
-				maskStr, ok := blocks[i]["mask"]
+				/*maskStr, ok := blocks[layeri]["mask"]
 				if !ok {
 					fmt.Printf("No field 'mask' for YOLO layer")
 					continue
@@ -239,7 +236,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 						fmt.Printf("Each element of 'mask' parameter for yolo layer should be an integer: %s\n", err.Error())
 					}
 				}
-				anchorsStr, ok := blocks[i]["anchors"]
+				anchorsStr, ok := blocks[дфнкi]["anchors"]
 				if !ok {
 					fmt.Printf("No field 'anchors' for YOLO layer")
 					continue
@@ -276,41 +273,9 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				}
 				layers = append(layers, &l)
 				fmt.Println(l)
-
-				// @todo detection node? or just flow?
-
-				filtersIdx = prevFilters
+				filtersIdx = prevFilters*/
 				break
-			case "maxpool":
-				sizeStr, ok := blocks[i]["size"]
-				if !ok {
-					fmt.Printf("No field 'size' for maxpooling layer")
-					continue
-				}
-				size, err := strconv.Atoi(sizeStr)
-				if err != nil {
-					fmt.Printf("'size' parameter for maxpooling layer should be an integer: %s\n", err.Error())
-					continue
-				}
-				strideStr, ok := blocks[i]["stride"]
-				if !ok {
-					fmt.Printf("No field 'stride' for maxpooling layer")
-					continue
-				}
-				stride, err := strconv.Atoi(strideStr)
-				if err != nil {
-					fmt.Printf("'size' parameter for maxpooling layer should be an integer: %s\n", err.Error())
-					continue
-				}
-				var l layerN = &maxPoolingLayer{
-					size:   size,
-					stride: stride,
-				}
-				layers = append(layers, &l)
-				fmt.Println(l)
 
-				filtersIdx = prevFilters
-				break
 			default:
 				fmt.Println("Impossible")
 				break
@@ -321,10 +286,10 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 	}
 
 	fmt.Println("Loading weights...")
-	lastIdx := 5 // skip first 5 values
-	epsilon := float32(0.000001)
+	//lastIdx := 5 // skip first 5 values
+	//epsilon := float32(0.000001)
 
-	ptr := 0
+	/*ptr := 0
 	for i := range layers {
 		l := *layers[i]
 		layerType := l.Type()
@@ -365,6 +330,6 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 		}
 	}
 
-	_, _ = lastIdx, epsilon
+	_, _ = lastIdx, epsilon*/
 	return nil, nil
 }
