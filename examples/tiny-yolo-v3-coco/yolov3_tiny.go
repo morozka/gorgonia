@@ -50,11 +50,14 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 	layers := []*layerN{}
 	outputFilters := []int{}
 	prevFilters := 3
+
+	networkNodes := []*gorgonia.Node{}
+
 	blocks := buildingBlocks[1:]
 	for i := range blocks {
-
+		block := blocks[i]
 		filtersIdx := 0
-		layerType, ok := blocks[i]["type"]
+		layerType, ok := block["type"]
 		if ok {
 			switch layerType {
 			case "convolutional":
@@ -65,30 +68,30 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				batchNormalize := 0
 				bias := false
 				activation := "activation"
-				activation, ok := blocks[i]["activation"]
+				activation, ok := block["activation"]
 				if !ok {
 					fmt.Printf("No field 'activation' for convolution layer")
 					continue
 				}
-				batchNormalizeStr, ok := blocks[i]["batch_normalize"]
+				batchNormalizeStr, ok := block["batch_normalize"]
 				batchNormalize, err := strconv.Atoi(batchNormalizeStr)
 				if !ok || err != nil {
 					batchNormalize = 0
 					bias = true
 				}
-				filtersStr, ok := blocks[i]["filters"]
+				filtersStr, ok := block["filters"]
 				filters, err = strconv.Atoi(filtersStr)
 				if !ok || err != nil {
 					fmt.Printf("Wrong or empty 'filters' parameter for convolution layer: %s\n", err.Error())
 					continue
 				}
-				paddingStr, ok := blocks[i]["pad"]
+				paddingStr, ok := block["pad"]
 				padding, err = strconv.Atoi(paddingStr)
 				if !ok || err != nil {
 					fmt.Printf("Wrong or empty 'pad' parameter for convolution layer: %s\n", err.Error())
 					continue
 				}
-				kernelSizeStr, ok := blocks[i]["size"]
+				kernelSizeStr, ok := block["size"]
 				kernelSize, err = strconv.Atoi(kernelSizeStr)
 				if !ok || err != nil {
 					fmt.Printf("Wrong or empty 'size' parameter for convolution layer: %s\n", err.Error())
@@ -98,7 +101,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				if padding != 0 {
 					pad = (kernelSize - 1) / 2
 				}
-				strideStr, ok := blocks[i]["stride"]
+				strideStr, ok := block["stride"]
 				stride, err = strconv.Atoi(strideStr)
 				if !ok || err != nil {
 					fmt.Printf("Wrong or empty 'stride' parameter for convolution layer: %s\n", err.Error())
@@ -113,10 +116,10 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					activation:     activation,
 					batchNormalize: batchNormalize,
 					bias:           bias,
-					// shape:          tensor.Shape{filters, prevFilters, kernelSize, kernelSize},
 				}
 				// conv node
 				convNode := gorgonia.NewTensor(g, tensor.Float32, 4, gorgonia.WithShape(filters, prevFilters, kernelSize, kernelSize), gorgonia.WithName(fmt.Sprintf("conv_%d", i)))
+
 				ll.convNode = convNode
 				if batchNormalize != 0 {
 					batchNormNode := gorgonia.NewTensor(g, tensor.Float32, 1, gorgonia.WithShape(filters), gorgonia.WithName(fmt.Sprintf("batch_norm_%d", i)))
@@ -128,6 +131,14 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				}
 
 				var l layerN = ll
+
+				convBlock, err := l.ToNode(g, input)
+				if err != nil {
+					fmt.Println("\t", err)
+				}
+				networkNodes = append(networkNodes, convBlock)
+				input = convBlock
+
 				layers = append(layers, &l)
 				fmt.Println(l)
 
@@ -135,16 +146,31 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				break
 			case "upsample":
 				scale := 0
-				scaleStr, ok := blocks[i]["stride"]
+				scaleStr, ok := block["stride"]
 				scale, err = strconv.Atoi(scaleStr)
 				if !ok || err != nil {
 					fmt.Printf("Wrong or empty 'stride' parameter for upsampling layer: %s\n", err.Error())
 					continue
 				}
 
+				upsampleout, err := gorgonia.Upsample2D(input, scale)
+				if err != nil {
+					fmt.Println("\t upsample error", err, input.Shape())
+				} else {
+					fmt.Println("\t upsample", upsampleout.Shape())
+				}
+
 				var l layerN = &upsampleLayer{
 					scale: scale,
 				}
+
+				upsampleBlock, err := l.ToNode(g, input)
+				if err != nil {
+					fmt.Println("\t", err)
+				}
+				networkNodes = append(networkNodes, upsampleBlock)
+				input = upsampleBlock
+
 				layers = append(layers, &l)
 				fmt.Println(l)
 
@@ -153,7 +179,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				filtersIdx = prevFilters
 				break
 			case "route":
-				routeLayersStr, ok := blocks[i]["layers"]
+				routeLayersStr, ok := block["layers"]
 				if !ok {
 					fmt.Printf("No field 'layers' for route layer")
 					continue
@@ -200,6 +226,14 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				}
 
 				var ll layerN = &l
+
+				routeBlock, err := l.ToNode(g, networkNodes...)
+				if err != nil {
+					fmt.Println("\t", err)
+				}
+				networkNodes = append(networkNodes, routeBlock)
+				input = routeBlock
+
 				layers = append(layers, &ll)
 				fmt.Println(ll)
 
@@ -208,7 +242,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 
 				break
 			case "yolo":
-				maskStr, ok := blocks[i]["mask"]
+				maskStr, ok := block["mask"]
 				if !ok {
 					fmt.Printf("No field 'mask' for YOLO layer")
 					continue
@@ -226,7 +260,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 						fmt.Printf("Each element of 'mask' parameter for yolo layer should be an integer: %s\n", err.Error())
 					}
 				}
-				anchorsStr, ok := blocks[i]["anchors"]
+				anchorsStr, ok := block["anchors"]
 				if !ok {
 					fmt.Printf("No field 'anchors' for YOLO layer")
 					continue
@@ -269,7 +303,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				filtersIdx = prevFilters
 				break
 			case "maxpool":
-				sizeStr, ok := blocks[i]["size"]
+				sizeStr, ok := block["size"]
 				if !ok {
 					fmt.Printf("No field 'size' for maxpooling layer")
 					continue
@@ -279,7 +313,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					fmt.Printf("'size' parameter for maxpooling layer should be an integer: %s\n", err.Error())
 					continue
 				}
-				strideStr, ok := blocks[i]["stride"]
+				strideStr, ok := block["stride"]
 				if !ok {
 					fmt.Printf("No field 'stride' for maxpooling layer")
 					continue
@@ -289,10 +323,19 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					fmt.Printf("'size' parameter for maxpooling layer should be an integer: %s\n", err.Error())
 					continue
 				}
+
 				var l layerN = &maxPoolingLayer{
 					size:   size,
 					stride: stride,
 				}
+
+				maxpoolingBlock, err := l.ToNode(g, input)
+				if err != nil {
+					fmt.Println("\t", err)
+				}
+				networkNodes = append(networkNodes, maxpoolingBlock)
+				input = maxpoolingBlock
+
 				layers = append(layers, &l)
 				fmt.Println(l)
 

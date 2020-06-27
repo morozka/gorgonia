@@ -1,6 +1,10 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+
+	"gorgonia.org/gorgonia"
+)
 
 type yoloLayer struct {
 	masks   []int
@@ -20,4 +24,9 @@ func (l *yoloLayer) String() string {
 
 func (l *yoloLayer) Type() string {
 	return "yolo"
+}
+
+func (l *yoloLayer) ToNode(g *gorgonia.ExprGraph, input ...*gorgonia.Node) (*gorgonia.Node, error) {
+	// @todo
+	return nil, nil
 }
