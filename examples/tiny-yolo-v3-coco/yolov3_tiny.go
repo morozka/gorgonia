@@ -134,7 +134,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 
 				convBlock, err := l.ToNode(g, input)
 				if err != nil {
-					fmt.Println("\t", err)
+					fmt.Printf("\tError preparing Convolutional block: %s\n", err.Error())
 				}
 				networkNodes = append(networkNodes, convBlock)
 				input = convBlock
@@ -153,20 +153,13 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					continue
 				}
 
-				upsampleout, err := gorgonia.Upsample2D(input, scale)
-				if err != nil {
-					fmt.Println("\t upsample error", err, input.Shape())
-				} else {
-					fmt.Println("\t upsample", upsampleout.Shape())
-				}
-
 				var l layerN = &upsampleLayer{
 					scale: scale,
 				}
 
 				upsampleBlock, err := l.ToNode(g, input)
 				if err != nil {
-					fmt.Println("\t", err)
+					fmt.Printf("\tError preparing Upsample block: %s\n", err.Error())
 				}
 				networkNodes = append(networkNodes, upsampleBlock)
 				input = upsampleBlock
@@ -229,7 +222,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 
 				routeBlock, err := l.ToNode(g, networkNodes...)
 				if err != nil {
-					fmt.Println("\t", err)
+					fmt.Printf("\tError preparing Route block: %s\n", err.Error())
 				}
 				networkNodes = append(networkNodes, routeBlock)
 				input = routeBlock
@@ -295,6 +288,13 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					masks:   masks,
 					anchors: selectedAnchors,
 				}
+				yoloBlock, err := l.ToNode(g, input)
+				if err != nil {
+					fmt.Printf("\tError preparing YOLO block: %s\n", err.Error())
+				}
+				networkNodes = append(networkNodes, yoloBlock)
+				input = yoloBlock
+
 				layers = append(layers, &l)
 				fmt.Println(l)
 
@@ -331,7 +331,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 
 				maxpoolingBlock, err := l.ToNode(g, input)
 				if err != nil {
-					fmt.Println("\t", err)
+					fmt.Printf("\tError preparing Max-Pooling block: %s\n", err.Error())
 				}
 				networkNodes = append(networkNodes, maxpoolingBlock)
 				input = maxpoolingBlock
