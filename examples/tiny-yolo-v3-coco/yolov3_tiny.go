@@ -160,6 +160,9 @@ func route(input *gorgonia.Node, block map[string]string, nn []layer) (l layer, 
 	return &routelayer{output: retVal}, nil
 }
 
+func yolo(input *gorgonia.Node, block map[string]string) error {
+}
+
 // NewYoloV3Tiny Create new tiny YOLO v3
 func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, boxesPerCell int, leakyCoef float64, cfgFile, weightsFile string) (*YoloV3Tiny, error) {
 	buildingBlocks, err := ParseConfiguration(cfgFile)
