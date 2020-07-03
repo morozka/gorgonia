@@ -386,21 +386,6 @@ func newElemUnaryOp(op ʘUnaryOperatorType, a *Node) elemUnaryOp {
 	}
 }
 
-func newElemUnaryOpType(op ʘUnaryOperatorType, dt tensor.Dtype) elemUnaryOp {
-	var operator ʘUnaryOperator
-	switch dt {
-	case Float32:
-		operator = sf32UnaryOperators[op]
-	case Float64:
-		operator = sf64UnaryOperators[op]
-	}
-
-	return elemUnaryOp{
-		ʘUnaryOperator: operator,
-		argTensor:      true,
-	}
-}
-
 func (op elemUnaryOp) Arity() int { return 1 }
 
 // all pointwise unary operations have this type:

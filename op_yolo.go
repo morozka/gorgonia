@@ -10,21 +10,25 @@ import (
 )
 
 type yoloOp struct {
-	anchors []int
+	anchors    [][2]int
+	inpDim     int
+	numClasses int
 }
 
-func newYoloOp(n *Node, anchors []int) *yoloOp {
+func newYoloOp(n *Node, anchors [][2]int, imheight, numclasses int) *yoloOp {
 	upsampleop := &yoloOp{
-		anchors: anchors,
+		anchors:    anchors,
+		inpDim:     imheight,
+		numClasses: numclasses,
 	}
 	return upsampleop
 }
 
 //YoloDetector yolov3 output layer
-func YoloDetector(x *Node, anchors []int) (*Node, error) {
+func YoloDetector(x *Node, anchors [][2]int, imheight, numclasses int) (*Node, error) {
 	// group := encoding.NewGroup("Yolo")
 	// xShape := x.Shape()
-	op := newYoloOp(x, anchors)
+	op := newYoloOp(x, anchors, imheight, numclasses)
 	// _ = group
 	retVal, err := ApplyOp(op, x)
 	return retVal, err
@@ -74,18 +78,68 @@ func (op *yoloOp) checkInput(inputs ...Value) (tensor.Tensor, error) {
 	return in, nil
 }
 
+func sigmSlice(v tensor.View, old error) {
+	if old != nil {
+		panic(old)
+	}
+	switch v.Dtype() {
+	case Float32:
+		if _, err := v.Apply(_sigmoidf32, tensor.WithReuse(v)); err != nil {
+			panic(err)
+		}
+	case Float64:
+		if _, err := v.Apply(_sigmoidf64, tensor.WithReuse(v)); err != nil {
+			panic(err)
+		}
+	default:
+		panic("Unsupportable type for Yolo")
+	}
+}
+
+func expSlice(v tensor.View, old error) {
+	if old != nil {
+		panic(old)
+	}
+	switch v.Dtype() {
+	case Float32:
+		if _, err := v.Apply(_sigmoidf32, tensor.WithReuse(v)); err != nil {
+			panic(err)
+		}
+	case Float64:
+		if _, err := v.Apply(, tensor.WithReuse(v)); err != nil {
+			panic(err)
+		}
+	default:
+		panic("Unsupportable type for Yolo")
+	}
+}
+
 func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 
 	in, _ := op.checkInput(inputs...)
 
-	sigm := newElemUnaryOpType(sigmoidOpType, in.Dtype())
-	sh := in.Shape()
-	v, _ := in.Slice(S(0, sh[0]), S(0, sh[1]), S(0), S(0, sh[3]))
-	retv, _ := sigm.Do(v)
-	// v.Apply(retv)
-	fmt.Println(v)
-	fmt.Println(retv)
-	fmt.Println(in)
-	return in, nil
+	batch := in.Shape()[0]
+	stride := int(op.inpDim / in.Shape()[2])
+	grid := int(op.inpDim / stride)
+	bboxAttrs := 5 + op.numClasses
+	numAnchors := len(op.anchors)
 
+	in.Reshape(batch, bboxAttrs*numAnchors, grid*grid)
+	in.T(1, 2)
+	in.Transpose()
+	in.Reshape(batch, grid*grid*numAnchors, bboxAttrs)
+
+	for i := range op.anchors {
+		op.anchors[i][0] = op.anchors[i][0] / stride
+		op.anchors[i][1] = op.anchors[i][1] / stride
+	}
+
+	sh := in.Shape()
+	sigmSlice(in.Slice(S(0, sh[0]), S(0, sh[1]), S(0)))
+	sigmSlice(in.Slice(S(0, sh[0]), S(0, sh[1]), S(1)))
+	sigmSlice(in.Slice(S(0, sh[0]), S(0, sh[1]), S(4)))
+
+	tensor.New()
+
+	return in, nil
 }
