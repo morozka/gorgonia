@@ -3,7 +3,6 @@ package gorgonia
 import (
 	"fmt"
 	"hash"
-	"math"
 
 	"github.com/chewxy/hm"
 	"github.com/pkg/errors"
@@ -100,7 +99,8 @@ func sigmSlice(v tensor.View, old error) {
 func expSlice(v tensor.View, old error) {
 	if old != nil {
 		panic(old)
-	}if _, err := v.Apply(_sigmoidf64, tensor.UseUnsafe()); err != nil {
+	}
+	if _, err := v.Apply(_sigmoidf64, tensor.UseUnsafe()); err != nil {
 		panic(err)
 	}
 }
@@ -127,9 +127,32 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 		op.anchors[i][1] = op.anchors[i][1] / stride
 	}
 
+	//Activation of x, y, and objectness params
 	sigmSlice(in.Slice(nil, nil, S(0)))
 	sigmSlice(in.Slice(nil, nil, S(1)))
-	sigmSlice(in.Slice(nil, nil, S(4)))
+	sigmSlice(in.Slice(nil, nil, S(4, 5+op.numClasses)))
+
+	for ind := 0; ind < grid; ind++ {
+		step := grid * numAnchors
+		vx, err := in.Slice(nil, S(ind*step, ind*step+step), S(0))
+		if err != nil {
+			panic(err)
+		}
+		vy, err := in.Slice(nil, S(ind, in.Shape()[1], step), S(1))
+		if err != nil {
+			panic(err)
+		}
+		tensor.Add(vx, ind)
+		tensor.Add(vy, ind)
+	}
+
+	for ind := 0; ind < grid; ind++ {
+		vw, err := in.Slice(nil, nil, S(2))
+		expSlice(vw, err)
+		vh, err := in.Slice(nil, nil, S(3))
+		expSlice(vh, err)
+
+	}
 
 	return in, nil
 }
