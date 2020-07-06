@@ -3,6 +3,7 @@ package gorgonia
 import (
 	"fmt"
 	"hash"
+	"math"
 
 	"github.com/chewxy/hm"
 	"github.com/pkg/errors"
@@ -84,11 +85,11 @@ func sigmSlice(v tensor.View, old error) {
 	}
 	switch v.Dtype() {
 	case Float32:
-		if _, err := v.Apply(_sigmoidf32, tensor.WithReuse(v)); err != nil {
+		if _, err := v.Apply(_sigmoidf32, tensor.UseUnsafe()); err != nil {
 			panic(err)
 		}
 	case Float64:
-		if _, err := v.Apply(_sigmoidf64, tensor.WithReuse(v)); err != nil {
+		if _, err := v.Apply(_sigmoidf64, tensor.UseUnsafe()); err != nil {
 			panic(err)
 		}
 	default:
@@ -99,46 +100,22 @@ func sigmSlice(v tensor.View, old error) {
 func expSlice(v tensor.View, old error) {
 	if old != nil {
 		panic(old)
-	}
-	switch v.Dtype() {
-	case Float32:
-		if _, err := v.Apply(_sigmoidf32, tensor.WithReuse(v)); err != nil {
-			panic(err)
-		}
-	case Float64:
-		if _, err := v.Apply(_sigmoidf64, tensor.WithReuse(v)); err != nil {
-			panic(err)
-		}
-	default:
-		panic("Unsupportable type for Yolo")
+	}if _, err := v.Apply(_sigmoidf64, tensor.UseUnsafe()); err != nil {
+		panic(err)
 	}
 }
 
 func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 
-	// in, _ := op.checkInput(inputs...)
-	ein := []float64{1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0}
-	in := tensor.New(tensor.Of(tensor.Float64), tensor.WithBacking(ein), tensor.WithShape(1, 1, 3, 3))
+	in, _ := op.checkInput(inputs...)
 	batch := in.Shape()[0]
 	stride := int(op.inpDim / in.Shape()[2])
 	grid := int(op.inpDim / stride)
 	bboxAttrs := 5 + op.numClasses
 	numAnchors := len(op.anchors)
 
-	sh := in.Shape()
 	fmt.Println( /* batch, stride, grid, bboxAttrs, */ numAnchors, op.inpDim)
-	fmt.Println("slice")
-	v, rrr := in.Slice(S(0, sh[0]), S(0, sh[1]), S(0, sh[2]), S(0, 2))
-	if rrr != nil {
-		panic(rrr)
-	}
-	fmt.Println("act")
-	_, errr := v.Apply(_sigmoidf64, tensor.WithReuse(v))
-	if errr != nil {
-		panic(errr)
-	}
 
-	return nil, nil
 	in.Reshape(batch, bboxAttrs*numAnchors, grid*grid)
 
 	in.T(1, 2)
@@ -150,19 +127,9 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 		op.anchors[i][1] = op.anchors[i][1] / stride
 	}
 
-	sh = in.Shape()
-	sigmSlice(in.Slice(S(0, sh[0]), S(0, sh[1]), S(0, 1)))
-	sigmSlice(in.Slice(S(0, sh[0]), S(0, sh[1]), S(1, 2)))
-	sigmSlice(in.Slice(S(0, sh[0]), S(0, sh[1]), S(4, 5)))
-
-	fmt.Println(in.Shape())
-
-	// for batch := range sh[0] {
-	// for xy := range sh[1] {
-	//
-	// }
-	//
-	// }
+	sigmSlice(in.Slice(nil, nil, S(0)))
+	sigmSlice(in.Slice(nil, nil, S(1)))
+	sigmSlice(in.Slice(nil, nil, S(4)))
 
 	return in, nil
 }
