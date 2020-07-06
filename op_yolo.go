@@ -106,7 +106,7 @@ func expSlice(v tensor.View, old error) {
 			panic(err)
 		}
 	case Float64:
-		if _, err := v.Apply(, tensor.WithReuse(v)); err != nil {
+		if _, err := v.Apply(_sigmoidf64, tensor.WithReuse(v)); err != nil {
 			panic(err)
 		}
 	default:
@@ -116,15 +116,31 @@ func expSlice(v tensor.View, old error) {
 
 func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 
-	in, _ := op.checkInput(inputs...)
-
+	// in, _ := op.checkInput(inputs...)
+	ein := []float64{1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0}
+	in := tensor.New(tensor.Of(tensor.Float64), tensor.WithBacking(ein), tensor.WithShape(1, 1, 3, 3))
 	batch := in.Shape()[0]
 	stride := int(op.inpDim / in.Shape()[2])
 	grid := int(op.inpDim / stride)
 	bboxAttrs := 5 + op.numClasses
 	numAnchors := len(op.anchors)
 
+	sh := in.Shape()
+	fmt.Println( /* batch, stride, grid, bboxAttrs, */ numAnchors, op.inpDim)
+	fmt.Println("slice")
+	v, rrr := in.Slice(S(0, sh[0]), S(0, sh[1]), S(0, sh[2]), S(0, 2))
+	if rrr != nil {
+		panic(rrr)
+	}
+	fmt.Println("act")
+	_, errr := v.Apply(_sigmoidf64, tensor.WithReuse(v))
+	if errr != nil {
+		panic(errr)
+	}
+
+	return nil, nil
 	in.Reshape(batch, bboxAttrs*numAnchors, grid*grid)
+
 	in.T(1, 2)
 	in.Transpose()
 	in.Reshape(batch, grid*grid*numAnchors, bboxAttrs)
@@ -134,12 +150,19 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 		op.anchors[i][1] = op.anchors[i][1] / stride
 	}
 
-	sh := in.Shape()
-	sigmSlice(in.Slice(S(0, sh[0]), S(0, sh[1]), S(0)))
-	sigmSlice(in.Slice(S(0, sh[0]), S(0, sh[1]), S(1)))
-	sigmSlice(in.Slice(S(0, sh[0]), S(0, sh[1]), S(4)))
+	sh = in.Shape()
+	sigmSlice(in.Slice(S(0, sh[0]), S(0, sh[1]), S(0, 1)))
+	sigmSlice(in.Slice(S(0, sh[0]), S(0, sh[1]), S(1, 2)))
+	sigmSlice(in.Slice(S(0, sh[0]), S(0, sh[1]), S(4, 5)))
 
-	tensor.New()
+	fmt.Println(in.Shape())
+
+	// for batch := range sh[0] {
+	// for xy := range sh[1] {
+	//
+	// }
+	//
+	// }
 
 	return in, nil
 }
