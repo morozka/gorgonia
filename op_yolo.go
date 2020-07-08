@@ -10,12 +10,12 @@ import (
 )
 
 type yoloOp struct {
-	anchors    [][2]int
+	anchors    []int
 	inpDim     int
 	numClasses int
 }
 
-func newYoloOp(n *Node, anchors [][2]int, imheight, numclasses int) *yoloOp {
+func newYoloOp(n *Node, anchors []int, imheight, numclasses int) *yoloOp {
 	upsampleop := &yoloOp{
 		anchors:    anchors,
 		inpDim:     imheight,
@@ -25,7 +25,7 @@ func newYoloOp(n *Node, anchors [][2]int, imheight, numclasses int) *yoloOp {
 }
 
 //YoloDetector yolov3 output layer
-func YoloDetector(x *Node, anchors [][2]int, imheight, numclasses int) (*Node, error) {
+func YoloDetector(x *Node, anchors []int, imheight, numclasses int) (*Node, error) {
 	// group := encoding.NewGroup("Yolo")
 	// xShape := x.Shape()
 	op := newYoloOp(x, anchors, imheight, numclasses)
@@ -79,6 +79,7 @@ func (op *yoloOp) checkInput(inputs ...Value) (tensor.Tensor, error) {
 }
 
 func sigmSlice(v tensor.View, old error) {
+	fmt.Println(v.Shape())
 	if old != nil {
 		panic(old)
 	}
@@ -112,9 +113,9 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	stride := int(op.inpDim / in.Shape()[2])
 	grid := int(op.inpDim / stride)
 	bboxAttrs := 5 + op.numClasses
-	numAnchors := len(op.anchors)
+	numAnchors := len(op.anchors) / 2
 
-	fmt.Println( /* batch, stride, grid, bboxAttrs, */ numAnchors, op.inpDim)
+	fmt.Println(grid, numAnchors, op.inpDim)
 
 	in.Reshape(batch, bboxAttrs*numAnchors, grid*grid)
 
@@ -122,37 +123,61 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	in.Transpose()
 	in.Reshape(batch, grid*grid*numAnchors, bboxAttrs)
 
-	for i := range op.anchors {
-		op.anchors[i][0] = op.anchors[i][0] / stride
-		op.anchors[i][1] = op.anchors[i][1] / stride
+	fmt.Println(in.Shape())
+
+	for i := 0; i < len(op.anchors); i += 2 {
+		op.anchors[i] = op.anchors[i] / stride
+		op.anchors[i+1] = op.anchors[+1] / stride
 	}
 
 	//Activation of x, y, and objectness params
-	sigmSlice(in.Slice(nil, nil, S(0)))
-	sigmSlice(in.Slice(nil, nil, S(1)))
-	sigmSlice(in.Slice(nil, nil, S(4, 5+op.numClasses)))
+	// sigmSlice(in.Slice(nil, nil, S(0)))
+	// sigmSlice(in.Slice(nil, nil, S(1)))
+	// sigmSlice(in.Slice(nil, nil, S(4, 5+op.numClasses)))
+
+	step := grid * numAnchors
 
 	for ind := 0; ind < grid; ind++ {
-		step := grid * numAnchors
 		vx, err := in.Slice(nil, S(ind*step, ind*step+step), S(0))
 		if err != nil {
 			panic(err)
 		}
-		vy, err := in.Slice(nil, S(ind, in.Shape()[1], step), S(1))
-		if err != nil {
-			panic(err)
+		switch in.Dtype() {
+		case Float32:
+			tensor.Add(vx, float32(ind), tensor.UseUnsafe())
+			break
+		case Float64:
+			tensor.Add(vx, float64(ind), tensor.UseUnsafe())
+			break
+		default:
+			panic("Unsupportable type for Yolo")
 		}
-		tensor.Add(vx, ind)
-		tensor.Add(vy, ind)
+		fmt.Println(ind, vx)
+		for n := 0; n < numAnchors; n++ {
+			vy, err := in.Slice(nil, S(ind+n, in.Shape()[1], step), S(1))
+			if err != nil {
+				panic(err)
+			}
+			switch in.Dtype() {
+			case Float32:
+				tensor.Add(vy, float32(ind), tensor.UseUnsafe())
+				break
+			case Float64:
+				tensor.Add(vy, float64(ind), tensor.UseUnsafe())
+				break
+			default:
+				panic("Unsupportable type for Yolo")
+			}
+		}
+
 	}
 
-	for ind := 0; ind < grid; ind++ {
-		vw, err := in.Slice(nil, nil, S(2))
-		expSlice(vw, err)
-		vh, err := in.Slice(nil, nil, S(3))
-		expSlice(vh, err)
-
-	}
+	// for ind := 0; ind < grid; ind++ {
+	// 	vw, err := in.Slice(nil, nil, S(2))
+	// 	expSlice(vw, err)
+	// 	vh, err := in.Slice(nil, nil, S(3))
+	// 	expSlice(vh, err)
+	// }
 
 	return in, nil
 }
