@@ -12,7 +12,7 @@ func TestYolo(t *testing.T) {
 		WithShape(1, 255, 13, 13),
 		WithName("inp"),
 		WithInit(Zeroes()))
-	out := Must(YoloDetector(inp, []int{116, 90, 156, 198, 373, 326}, 416, 80))
+	out := Must(YoloDetector(inp, []float64{116, 90, 156, 198, 373, 326}, 416, 80))
 
 	// t.Log("\n", inp.Value())
 
