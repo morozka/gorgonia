@@ -3,6 +3,7 @@ package gorgonia
 import (
 	"fmt"
 	"hash"
+	"os"
 
 	"github.com/chewxy/hm"
 	"github.com/pkg/errors"
@@ -152,9 +153,11 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 		default:
 			panic("Unsupportable type for Yolo")
 		}
-		fmt.Println(ind, vx)
+		// fmt.Println(ind, vx)
+
+		//Tricky part
 		for n := 0; n < numAnchors; n++ {
-			vy, err := in.Slice(nil, S(ind+n, in.Shape()[1], step), S(1))
+			vy, err := in.Slice(nil, S(ind*numAnchors+n, in.Shape()[1], step), S(1))
 			if err != nil {
 				panic(err)
 			}
@@ -171,7 +174,9 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 		}
 
 	}
-
+	f, _ := os.Create("./out")
+	defer f.Close()
+	f.WriteString(fmt.Sprint(in.Shape(), in.Data()))
 	// for ind := 0; ind < grid; ind++ {
 	// 	vw, err := in.Slice(nil, nil, S(2))
 	// 	expSlice(vw, err)
