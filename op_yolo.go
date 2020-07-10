@@ -3,8 +3,10 @@ package gorgonia
 import (
 	"fmt"
 	"hash"
+	"math"
 
 	"github.com/chewxy/hm"
+	"github.com/chewxy/math32"
 	"github.com/pkg/errors"
 	"gorgonia.org/tensor"
 )
@@ -95,14 +97,14 @@ func sigmoidSlice(v tensor.View) error {
 func expSlice(v tensor.View) error {
 	switch v.Dtype() {
 	case Float32:
-		_, err := v.Apply(_sigmoidf32, tensor.UseUnsafe())
+		_, err := v.Apply(math32.Exp, tensor.UseUnsafe())
 		if err != nil {
-			return errors.Wrap(err, "Can't do _sigmoidf32")
+			return errors.Wrap(err, "Can't do exp32")
 		}
 	case Float64:
-		_, err := v.Apply(_sigmoidf64, tensor.UseUnsafe())
+		_, err := v.Apply(math.Exp, tensor.UseUnsafe())
 		if err != nil {
-			return errors.Wrap(err, "Can't do _sigmoidf64")
+			return errors.Wrap(err, "Can't do exp64")
 		}
 	default:
 		return fmt.Errorf("Unsupported numeric type for YOLO v3 for exp function. Please use float64 or float32")
