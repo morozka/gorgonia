@@ -1,25 +1,47 @@
 package gorgonia
 
 import (
+	"os"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"gorgonia.org/tensor"
 )
 
 func TestYolo(t *testing.T) {
+	input := tensor.New(tensor.Of(tensor.Float32))
+	r, _ := os.Open("./1input.[(10, 13), (16, 30), (33, 23)].npy")
+	input.ReadNpy(r)
+	output := tensor.New(tensor.Of(tensor.Float32))
+	r, _ = os.Open("./1output.[(10, 13), (16, 30), (33, 23)].npy")
+	output.ReadNpy(r)
+
 	g := NewGraph()
-	inp := NewTensor(g, tensor.Float64, 4,
-		WithShape(1, 255, 13, 13),
+	inp := NewTensor(g, tensor.Float32, 4,
+		WithShape(input.Shape()...),
 		WithName("inp"),
-		WithInit(Zeroes()))
-	out := Must(YoloDetector(inp, []float64{116, 90, 156, 198, 373, 326}, 416, 80))
+	)
+
+	// fmt.Println(input)
+	out := Must(YoloDetector(inp, []float64{10, 13, 16, 30, 33, 23}, 416, 80))
 
 	// t.Log("\n", inp.Value())
-
 	vm := NewTapeMachine(g)
+	if err := Let(inp, input); err != nil {
+		panic(err)
+	}
 	vm.RunAll()
 	vm.Close()
-	t.Log("\n", out.Value())
+
+	t.Log("Got:\n", out.Value())
+	t.Log("Expected:\n", output)
+
+	// ff, _ := os.Create("./myout.npy")
+
+	// out.Value().(*tensor.Dense).WriteNpy(ff)
+	if !assert.Equal(t, out.Value().Data(), output.Data(), "Output is not equal to expected value") {
+		panic("NOT EQUEAL")
+	}
 
 	// e := []float64{
 	// 	0, 0, 0, 0, 1, 0, 1, 0, 2, 0, 2, 0,

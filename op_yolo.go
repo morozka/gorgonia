@@ -3,6 +3,7 @@ package gorgonia
 import (
 	"fmt"
 	"hash"
+	"math"
 
 	"github.com/chewxy/hm"
 	"github.com/pkg/errors"
@@ -101,9 +102,28 @@ func expSlice(v tensor.View, old error) {
 	if old != nil {
 		panic(old)
 	}
-	if _, err := v.Apply(_sigmoidf64, tensor.UseUnsafe()); err != nil {
-		panic(err)
+	switch v.Dtype() {
+	case Float32:
+		if _, err := v.Apply(func(x float32) float32 {
+			return float32(math.Exp(float64(x)))
+		}, tensor.UseUnsafe()); err != nil {
+			panic(err)
+		}
+	case Float64:
+		if _, err := v.Apply(math.Exp, tensor.UseUnsafe()); err != nil {
+			panic(err)
+		}
+	default:
+		panic("Unsupportable type for Yolo")
 	}
+}
+
+func convertToFloat32(in []float64) []float32 {
+	out := make([]float32, len(in))
+	for i := range in {
+		out[i] = float32(in[i])
+	}
+	return out
 }
 
 func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
@@ -115,40 +135,11 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	bboxAttrs := 5 + op.numClasses
 	numAnchors := len(op.anchors) / 2
 
-	fmt.Println(grid, numAnchors, op.inpDim)
-
 	in.Reshape(batch, bboxAttrs*numAnchors, grid*grid)
 
-	in.T(1, 2)
+	in.T(0, 2, 1)
 	in.Transpose()
 	in.Reshape(batch, grid*grid*numAnchors, bboxAttrs)
-
-	fmt.Println(in.Shape())
-	anchs := make([]float64, 0)
-	for i := 0; i < grid*grid; i++ {
-		anchs = append(anchs, op.anchors...)
-	}
-	anch := tensor.New(
-		tensor.Of(in.Dtype()),
-		tensor.WithBacking(anchs),
-		tensor.WithShape(1, grid*grid*numAnchors, 2),
-	)
-
-	switch in.Dtype() {
-	case Float32:
-		_, err = tensor.Div(anch, float32(stride), tensor.UseUnsafe())
-		break
-	case Float64:
-		_, err = tensor.Div(anch, float64(stride), tensor.UseUnsafe())
-		break
-	default:
-		panic("Unsupportable type for Yolo")
-	}
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(stride)
-	fmt.Println(anch)
 
 	// Activation of x, y, and objectness params
 	sigmSlice(in.Slice(nil, nil, S(0, 2)))
@@ -164,13 +155,16 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 		}
 		switch in.Dtype() {
 		case Float32:
-			tensor.Add(vy, float32(ind), tensor.UseUnsafe())
+			_, err = tensor.Add(vy, float32(ind), tensor.UseUnsafe())
 			break
 		case Float64:
-			tensor.Add(vy, float64(ind), tensor.UseUnsafe())
+			_, err = tensor.Add(vy, float64(ind), tensor.UseUnsafe())
 			break
 		default:
 			panic("Unsupportable type for Yolo")
+		}
+		if err != nil {
+			panic(err)
 		}
 
 		//Tricky part
@@ -196,9 +190,61 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 		}
 
 	}
+
+	anchs := make([]float64, 0)
+	for i := 0; i < grid*grid; i++ {
+		anchs = append(anchs, op.anchors...)
+	}
+
+	anch := tensor.New(
+		tensor.Of(in.Dtype()),
+		tensor.WithShape(1, grid*grid*numAnchors, 2),
+	)
+	for i := range anchs {
+		switch in.Dtype() {
+		case Float32:
+			anch.Set(i, float32(anchs[i]))
+			break
+		case Float64:
+			anch.Set(i, float64(anchs[i]))
+		default:
+			break
+		}
+	}
+	fmt.Println(in.Dtype(), anch.Dtype())
+
+	switch in.Dtype() {
+	case Float32:
+		_, err = tensor.Div(anch, float32(stride), tensor.UseUnsafe())
+		if err != nil {
+			panic(err)
+		}
+		break
+	case Float64:
+		_, err = tensor.Div(anch, float64(stride), tensor.UseUnsafe())
+		if err != nil {
+			panic(err)
+		}
+		break
+	default:
+		panic("Unsupportable type for Yolo")
+	}
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(anch.Dtype(), in.Dtype())
+
 	vhw, err := in.Slice(nil, nil, S(2, 4))
 	expSlice(vhw, err)
-	tensor.Mul(vhw, anch, tensor.UseUnsafe())
+	// one := tensor.Ones(anch.Dtype(), vhw.Shape()...)
+
+	_, err = tensor.Mul(vhw, anch, tensor.UseUnsafe())
+	if err != nil {
+		fmt.Println(vhw.Dtype(), anch.Dtype(), in.Dtype())
+		panic(err)
+	}
+	// fmt.Println(one)
 
 	vv, err := in.Slice(nil, nil, S(0, 4))
 	if err != nil {
@@ -207,7 +253,7 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 
 	switch in.Dtype() {
 	case Float32:
-		_, err = tensor.Mul(vv, float64(stride), tensor.UseUnsafe())
+		_, err = tensor.Mul(vv, float32(stride), tensor.UseUnsafe())
 		break
 	case Float64:
 		_, err = tensor.Mul(vv, float64(stride), tensor.UseUnsafe())
@@ -218,6 +264,5 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(stride, in)
 	return in, nil
 }
