@@ -35,6 +35,10 @@ type YoloV3Tiny struct {
 
 // NewYoloV3Tiny Create new tiny YOLO v3
 func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, boxesPerCell int, leakyCoef float64, cfgFile, weightsFile string) (*YoloV3Tiny, error) {
+	inputS := input.Shape()
+	if len(inputS) < 4 {
+		return nil, fmt.Errorf("Input for YOLOv3 should contain infromation about 4 dimensions")
+	}
 
 	buildingBlocks, err := ParseConfiguration(cfgFile)
 	if err != nil {
@@ -285,8 +289,11 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				}
 
 				var l layerN = &yoloLayer{
-					masks:   masks,
-					anchors: selectedAnchors,
+					masks:          masks,
+					anchors:        selectedAnchors,
+					flattenAhcnors: anchors,
+					inputSize:      inputS[2],
+					classesNum:     classesNumber,
 				}
 				yoloBlock, err := l.ToNode(g, input)
 				if err != nil {

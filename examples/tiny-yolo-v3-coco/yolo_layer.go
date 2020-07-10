@@ -3,12 +3,17 @@ package main
 import (
 	"fmt"
 
+	"github.com/pkg/errors"
 	"gorgonia.org/gorgonia"
+	"gorgonia.org/tensor"
 )
 
 type yoloLayer struct {
-	masks   []int
-	anchors [][2]int
+	masks          []int
+	anchors        [][2]int
+	flattenAhcnors []int
+	inputSize      int
+	classesNum     int
 }
 
 func (l *yoloLayer) String() string {
@@ -27,6 +32,14 @@ func (l *yoloLayer) Type() string {
 }
 
 func (l *yoloLayer) ToNode(g *gorgonia.ExprGraph, input ...*gorgonia.Node) (*gorgonia.Node, error) {
-	// @todo
-	return nil, nil
+	inputN := input[0]
+	if len(inputN.Shape()) == 0 {
+		return nil, fmt.Errorf("Input shape for YOLO layer is nil")
+	}
+	preparedTensor := gorgonia.NewTensor(g, tensor.Float64, 4, gorgonia.WithShape(inputN.Shape()...), gorgonia.WithName("yolo"), gorgonia.WithInit(gorgonia.Zeroes()))
+	yoloNode, err := gorgonia.YOLOv3(preparedTensor, l.flattenAhcnors, l.inputSize, l.classesNum)
+	if err != nil {
+		return nil, errors.Wrap(err, "Can't prepare YOLOv3 operation")
+	}
+	return yoloNode, nil
 }
