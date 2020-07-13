@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"time"
 
 	"gorgonia.org/gorgonia"
 	G "gorgonia.org/gorgonia"
@@ -28,6 +30,25 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-
 	_ = model
+
+	imgf32, err := GetFloat32Image("data/dog_416x416.jpg")
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	image := tensor.New(tensor.WithShape(1, channels, height, width), tensor.Of(tensor.Float32), tensor.WithBacking(imgf32))
+	err = gorgonia.Let(input, image)
+	if err != nil {
+	}
+
+	tm := G.NewTapeMachine(g)
+	defer tm.Close()
+	st := time.Now()
+	if err := tm.RunAll(); err != nil {
+		log.Fatalf("%+v", err)
+	}
+	fmt.Println("Feedforwarded in:", time.Since(st))
+
+	tm.Reset()
 }
