@@ -171,8 +171,6 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				layers = append(layers, &l)
 				fmt.Println(l)
 
-				// @todo upsample node
-
 				filtersIdx = prevFilters
 				break
 			case "route":
@@ -236,8 +234,6 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				layers = append(layers, &ll)
 
 				fmt.Println(ll)
-
-				// @todo evaluate 'prevFilters'
 
 				break
 			case "yolo":
