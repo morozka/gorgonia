@@ -189,6 +189,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				for l := range layersSplit {
 					layersSplit[l] = strings.TrimSpace(layersSplit[l])
 				}
+
 				start := 0
 				end := 0
 				start, err := strconv.Atoi(layersSplit[0])
@@ -215,6 +216,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					firstLayerIdx:  i + start,
 					secondLayerIdx: -1,
 				}
+
 				if end < 0 {
 					l.secondLayerIdx = i + end
 					filtersIdx = outputFilters[i+start] + outputFilters[i+end]
@@ -232,9 +234,9 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				input = routeBlock
 
 				layers = append(layers, &ll)
+
 				fmt.Println(ll)
 
-				// @todo upsample node
 				// @todo evaluate 'prevFilters'
 
 				break
@@ -356,6 +358,9 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 		prevFilters = filtersIdx
 		outputFilters = append(outputFilters, filtersIdx)
 	}
+	// for i := range networkNodes {
+	// 	fmt.Println(i, networkNodes[i].Shape())
+	// }
 
 	fmt.Println("Loading weights...")
 	lastIdx := 5 // skip first 5 values
