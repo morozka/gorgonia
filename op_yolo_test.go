@@ -23,7 +23,7 @@ func TestYolo(t *testing.T) {
 	)
 
 	// fmt.Println(input)
-	out := Must(YoloDetector(inp, []float64{10, 13, 16, 30, 33, 23}, 416, 80))
+	out := Must(YoloDetector(inp, []float64{10, 13, 16, 30, 33, 23}, []int{0, 1, 2}, 416, 80, 0.5))
 
 	// t.Log("\n", inp.Value())
 	vm := NewTapeMachine(g)
