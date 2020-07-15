@@ -22,6 +22,10 @@ func TestYolo(t *testing.T) {
 		WithName("inp"),
 	)
 
+	//inp2 := NewTensor(g, tensor.Float32, 4,
+	//	WithShape(input.Shape()...),
+	//	WithName("inp2"),
+	//)
 	// fmt.Println(input)
 	out := Must(YoloDetector(inp, []float64{10, 13, 16, 30, 33, 23}, []int{0, 1, 2}, 416, 80, 0.5))
 
