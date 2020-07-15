@@ -11,31 +11,42 @@ import (
 )
 
 type yoloOp struct {
-	anchors    []float64
-	inpDim     int
-	numClasses int
+	anchors     []float64
+	mask        []int
+	ignoreTresh float64
+	inpDim      int
+	numClasses  int
+	train       bool
 }
 
-func newYoloOp(n *Node, anchors []float64, imheight, numclasses int) *yoloOp {
-	upsampleop := &yoloOp{
-		anchors:    anchors,
-		inpDim:     imheight,
-		numClasses: numclasses,
+func newYoloOp(anchors []float64, mask []int, imheight, numclasses int, ignoreTresh float64, train bool) *yoloOp {
+	yoloOp := &yoloOp{
+		anchors:     anchors,
+		inpDim:      imheight,
+		numClasses:  numclasses,
+		ignoreTresh: ignoreTresh,
+		mask:        mask,
+		train:       train,
 	}
-	return upsampleop
+	return yoloOp
 }
 
 //YoloDetector yolov3 output layer
-func YoloDetector(x *Node, anchors []float64, imheight, numclasses int) (*Node, error) {
-	// group := encoding.NewGroup("Yolo")
-	// xShape := x.Shape()
-	op := newYoloOp(x, anchors, imheight, numclasses)
-	// _ = group
+func YoloDetector(x *Node, anchors []float64, mask []int, imheight, numclasses int, ignoreTresh float64, target ...*Node) (*Node, error) {
+	if len(target) > 0 {
+		op := newYoloOp(anchors, mask, imheight, numclasses, ignoreTresh, true)
+		retVal, err := ApplyOp(op, x, target[0])
+		return retVal, err
+	}
+	op := newYoloOp(anchors, mask, imheight, numclasses, ignoreTresh, false)
 	retVal, err := ApplyOp(op, x)
 	return retVal, err
 }
 
 func (op *yoloOp) Arity() int {
+	if op.train {
+		return 2
+	}
 	return 1
 }
 
@@ -52,21 +63,32 @@ func (op *yoloOp) String() string {
 	return fmt.Sprintf("Yolo{}(anchors: (%v))", op.anchors)
 }
 func (op *yoloOp) InferShape(inputs ...DimSizer) (tensor.Shape, error) {
-	s := inputs[0].(tensor.Shape).Clone()
-	return s, nil
+	if !op.train {
+		s := inputs[0].(tensor.Shape).Clone()
+		return s, nil
+	}
+	return []int{1}, nil
 }
+
 func (op *yoloOp) Type() hm.Type {
 
 	a := hm.TypeVariable('a')
 	t := newTensorType(4, a)
-	return hm.NewFnType(t, t)
+	if !op.train {
+		return hm.NewFnType(t, t)
+	}
+	return hm.NewFnType(t, t, t)
+
 }
 func (op *yoloOp) OverwritesInput() int { return -1 }
 
 func (op *yoloOp) checkInput(inputs ...Value) (tensor.Tensor, error) {
+
+	//Delete?
 	if err := checkArity(op, len(inputs)); err != nil {
 		return nil, err
 	}
+
 	var in tensor.Tensor
 	var ok bool
 	if in, ok = inputs[0].(tensor.Tensor); !ok {
@@ -127,7 +149,23 @@ func convertToFloat32(in []float64) []float32 {
 }
 
 func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
-
+	if !op.train {
+		in, _ := op.checkInput(inputs...)
+		batch := in.Shape()[0]
+		stride := int(op.inpDim / in.Shape()[2])
+		grid := in.Shape()[2]
+		bboxAttrs := 5 + op.numClasses
+		numAnchors := len(op.mask)
+		currentAnchors := []float64{}
+		for _, i := range op.mask {
+			if i >= (len(op.anchors) / 2) {
+				return nil, errors.New("Incorrect mask for anchors on yolo layer with name" + fmt.Sprint(op.mask))
+			}
+			currentAnchors = append(currentAnchors, op.anchors[i*2], op.anchors[i*2+1])
+		}
+		fmt.Println(currentAnchors, op.anchors, in.Shape()[2], int(op.inpDim/stride))
+		return op.yoloDoer(in, batch, stride, grid, bboxAttrs, numAnchors, currentAnchors)
+	}
 	in, _ := op.checkInput(inputs...)
 	batch := in.Shape()[0]
 	stride := int(op.inpDim / in.Shape()[2])
@@ -135,6 +173,27 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	bboxAttrs := 5 + op.numClasses
 	numAnchors := len(op.anchors) / 2
 
+	in, _ = op.yoloDoer(in, batch, stride, grid, bboxAttrs, numAnchors, op.anchors)
+	var yboxes32 []float32
+	switch in.Dtype() {
+	case Float32:
+		yboxes32 = in.Data().([]float32)
+		break
+	case Float64:
+		yboxes64 := in.Data().([]float64)
+		yboxes32 = convertToFloat32(yboxes64)
+		break
+	default:
+		panic("Unsupportable type for Yolo")
+	}
+	fmt.Println(yboxes32)
+	if err != nil {
+		panic(err)
+	}
+
+	return in, nil
+}
+func (op *yoloOp) yoloDoer(in tensor.Tensor, batch, stride, grid, bboxAttrs, numAnchors int, currentAnchors []float64) (retVal tensor.Tensor, err error) {
 	in.Reshape(batch, bboxAttrs*numAnchors, grid*grid)
 
 	in.T(0, 2, 1)
@@ -193,7 +252,7 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 
 	anchs := make([]float64, 0)
 	for i := 0; i < grid*grid; i++ {
-		anchs = append(anchs, op.anchors...)
+		anchs = append(anchs, currentAnchors...)
 	}
 
 	anch := tensor.New(

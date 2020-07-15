@@ -22,8 +22,12 @@ func TestYolo(t *testing.T) {
 		WithName("inp"),
 	)
 
+	//inp2 := NewTensor(g, tensor.Float32, 4,
+	//	WithShape(input.Shape()...),
+	//	WithName("inp2"),
+	//)
 	// fmt.Println(input)
-	out := Must(YoloDetector(inp, []float64{10, 13, 16, 30, 33, 23}, 416, 80))
+	out := Must(YoloDetector(inp, []float64{10, 13, 16, 30, 33, 23}, []int{0, 1, 2}, 416, 80, 0.5))
 
 	// t.Log("\n", inp.Value())
 	vm := NewTapeMachine(g)
@@ -55,12 +59,9 @@ func TestYolo(t *testing.T) {
 	)
 	// in.Reshape()
 	// fmt.Println(in)
-
 	grid := 3
 	numAnchors := 2
-
 	step := grid * numAnchors
-
 	 for ind := 0; ind < grid; ind++ {
 		vx, err := in.Slice(nil, S(ind*step, ind*step+step), S(1))
 		if err != nil {
@@ -77,7 +78,6 @@ func TestYolo(t *testing.T) {
 			panic("Unsupportable type for Yolo")
 		}
 		// fmt.Println(ind, vx)
-
 		//Tricky part
 		for n := 0; n < numAnchors; n++ {
 			vy, err := in.Slice(nil, S(ind*numAnchors+n, in.Shape()[1], step), S(0))
@@ -85,7 +85,6 @@ func TestYolo(t *testing.T) {
 				panic(err)
 			}
 			// fmt.Println("VY:", ind, n, vy)
-
 			switch in.Dtype() {
 			case Float32:
 				tensor.Add(vy, float32(ind), tensor.UseUnsafe())
@@ -107,7 +106,6 @@ func TestYolo(t *testing.T) {
 		fmt.Print(x)
 	}
 	fmt.Println()
-
 	fmt.Println(in)
 	f, _ := os.Create("./out")
 	defer f.Close()
