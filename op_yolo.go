@@ -2,12 +2,11 @@ package gorgonia
 
 import (
 	"fmt"
-	"hash"
-	"math"
-
 	"github.com/chewxy/hm"
 	"github.com/pkg/errors"
 	"gorgonia.org/tensor"
+	"hash"
+	"math"
 )
 
 type yoloOp struct {
@@ -34,6 +33,9 @@ func newYoloOp(anchors []float64, mask []int, imheight, numclasses int, ignoreTr
 //YoloDetector yolov3 output layer
 func YoloDetector(x *Node, anchors []float64, mask []int, imheight, numclasses int, ignoreTresh float64, target ...*Node) (*Node, error) {
 	if len(target) > 0 {
+		//x, err := Concat(1, x, target[0])
+		//fmt.Println(err)
+		fmt.Println("concattttttt")
 		op := newYoloOp(anchors, mask, imheight, numclasses, ignoreTresh, true)
 		retVal, err := ApplyOp(op, x)
 		return retVal, err
@@ -158,6 +160,7 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 		return op.yoloDoer(in, batch, stride, grid, bboxAttrs, numAnchors, currentAnchors)
 	}
 	in, _ := op.checkInput(inputs...)
+	fmt.Println(in.Shape(), "test")
 	batch := in.Shape()[0]
 	stride := int(op.inpDim / in.Shape()[2])
 	grid := in.Shape()[2]
@@ -318,4 +321,29 @@ func (op *yoloOp) yoloDoer(in tensor.Tensor, batch, stride, grid, bboxAttrs, num
 		panic(err)
 	}
 	return in, nil
+}
+
+//getTensorData32 - returns all elements of a tensor as an array
+func getTensorData32(in tensor.Tensor) []float32 {
+	data := make([]float32, 0)
+	switch in.Dtype() {
+	case tensor.Float32:
+		in.Reshape(in.Shape()[0] * in.Shape()[1] * in.Shape()[2])
+		for i := 0; i < in.Shape()[0]; i++ {
+			buf, _ := in.At(i)
+			data = append(data, buf.(float32))
+		}
+		break
+	case tensor.Float64:
+		//NOT CHECKED!
+		in.Reshape(in.Shape()[0] * in.Shape()[1] * in.Shape()[2])
+		for i := 0; i < in.Shape()[0]*in.Shape()[1]*in.Shape()[2]; i++ {
+			buf, _ := in.At(i)
+			data = append(data, buf.(float32))
+		}
+		break
+	default:
+		panic("Unsupportable type for Yolo")
+	}
+	return data
 }
