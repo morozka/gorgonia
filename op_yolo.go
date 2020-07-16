@@ -35,7 +35,7 @@ func newYoloOp(anchors []float64, mask []int, imheight, numclasses int, ignoreTr
 func YoloDetector(x *Node, anchors []float64, mask []int, imheight, numclasses int, ignoreTresh float64, target ...*Node) (*Node, error) {
 	if len(target) > 0 {
 		op := newYoloOp(anchors, mask, imheight, numclasses, ignoreTresh, true)
-		retVal, err := ApplyOp(op, x, target[0])
+		retVal, err := ApplyOp(op, x)
 		return retVal, err
 	}
 	op := newYoloOp(anchors, mask, imheight, numclasses, ignoreTresh, false)
@@ -44,9 +44,6 @@ func YoloDetector(x *Node, anchors []float64, mask []int, imheight, numclasses i
 }
 
 func (op *yoloOp) Arity() int {
-	if op.train {
-		return 2
-	}
 	return 1
 }
 
@@ -63,21 +60,15 @@ func (op *yoloOp) String() string {
 	return fmt.Sprintf("Yolo{}(anchors: (%v))", op.anchors)
 }
 func (op *yoloOp) InferShape(inputs ...DimSizer) (tensor.Shape, error) {
-	if !op.train {
-		s := inputs[0].(tensor.Shape).Clone()
-		return s, nil
-	}
-	return []int{1}, nil
+	s := inputs[0].(tensor.Shape).Clone()
+	return s, nil
 }
 
 func (op *yoloOp) Type() hm.Type {
 
 	a := hm.TypeVariable('a')
 	t := newTensorType(4, a)
-	if !op.train {
-		return hm.NewFnType(t, t)
-	}
-	return hm.NewFnType(t, t, t)
+	return hm.NewFnType(t, t)
 
 }
 func (op *yoloOp) OverwritesInput() int { return -1 }
@@ -169,26 +160,29 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	in, _ := op.checkInput(inputs...)
 	batch := in.Shape()[0]
 	stride := int(op.inpDim / in.Shape()[2])
-	grid := int(op.inpDim / stride)
+	grid := in.Shape()[2]
 	bboxAttrs := 5 + op.numClasses
 	numAnchors := len(op.anchors) / 2
-
 	in, _ = op.yoloDoer(in, batch, stride, grid, bboxAttrs, numAnchors, op.anchors)
-	var yboxes32 []float32
+	yboxes32 := make([]float32, 0)
 	switch in.Dtype() {
 	case Float32:
-		yboxes32 = in.Data().([]float32)
+		in.Reshape(in.Shape()[0] * in.Shape()[1] * in.Shape()[2])
+		for i := 0; i < in.Shape()[0]; i++ {
+			buf, _ := in.At(i)
+			yboxes32 = append(yboxes32, buf.(float32))
+		}
 		break
 	case Float64:
-		yboxes64 := in.Data().([]float64)
-		yboxes32 = convertToFloat32(yboxes64)
+		//NOT CHECKED!
+		in.Reshape(in.Shape()[0] * in.Shape()[1] * in.Shape()[2])
+		for i := 0; i < in.Shape()[0]*in.Shape()[1]*in.Shape()[2]; i++ {
+			buf, _ := in.At(i)
+			yboxes32 = append(yboxes32, buf.(float32))
+		}
 		break
 	default:
 		panic("Unsupportable type for Yolo")
-	}
-	fmt.Println(yboxes32)
-	if err != nil {
-		panic(err)
 	}
 
 	return in, nil
