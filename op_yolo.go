@@ -37,8 +37,6 @@ func YoloDetector(x *Node, anchors []float64, mask []int, imheight, numclasses i
 		st, _ := Slice(target[0], S(0), nil, nil, nil)
 		rx := Must(Concat(0, sx, st))
 		rx = Must(Reshape(rx, []int{1, rx.Shape()[0], rx.Shape()[1], rx.Shape()[2]}))
-		//fmt.Println(nx.Value(), err)
-		//fmt.Println("concattttttt")
 		op := newYoloOp(anchors, mask, imheight, numclasses, ignoreTresh, true)
 		retVal, err := ApplyOp(op, rx)
 		return retVal, err
@@ -168,40 +166,71 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 		return op.yoloDoer(in, batch, stride, grid, bboxAttrs, numAnchors, currentAnchors)
 	}
 	in, _ := op.checkInput(inputs...)
-	fmt.Println(in.Shape(), "before slice")
-	inv, _ := in.Slice(nil, S(0, 255), nil, nil)
-	in = inv.Materialize()
-	fmt.Println(inv.Shape(), in.Shape(), "after slice")
+	inv, _ := in.Slice(nil, S(0, in.Shape()[1]-1), nil, nil)
+	numTargets, _ := in.At(0, in.Shape()[1]-1, 0, 0)
 	batch := in.Shape()[0]
 	stride := int(op.inpDim / in.Shape()[2])
 	grid := in.Shape()[2]
 	bboxAttrs := 5 + op.numClasses
 	numAnchors := len(op.anchors) / 2
-	in, _ = op.yoloDoer(in, batch, stride, grid, bboxAttrs, numAnchors, op.anchors)
-
-	return in, nil
-	yboxes32 := make([]float32, 0)
+	currentAnchors := []float64{}
+	for _, i := range op.mask {
+		if i >= (len(op.anchors) / 2) {
+			return nil, errors.New("Incorrect mask for anchors on yolo layer with name" + fmt.Sprint(op.mask))
+		}
+		currentAnchors = append(currentAnchors, op.anchors[i*2], op.anchors[i*2+1])
+	}
+	fmt.Println(numTargets)
+	var targets []float32
 	switch in.Dtype() {
 	case Float32:
-		in.Reshape(in.Shape()[0] * in.Shape()[1] * in.Shape()[2])
-		for i := 0; i < in.Shape()[0]; i++ {
-			buf, _ := in.At(i)
+		lt := int(numTargets.(float32))
+		targets = make([]float32, lt, lt)
+		for i := 1; i <= lt; i++ {
+			buf, _ := in.At(0, in.Shape()[1]-1, 0+i/grid, 0+i%grid)
+			targets[i-1] = buf.(float32)
+		}
+		break
+	case Float64:
+		lt := int(numTargets.(float64))
+		targets = make([]float32, lt, lt)
+		for i := 1; i <= lt; i++ {
+			buf, _ := in.At(0, in.Shape()[1]-1, 0+i/grid, 0+i%grid)
+			targets[i-1] = float32(buf.(float64))
+		}
+		break
+	default:
+		panic("Unsupportable type for Yolo")
+	}
+	fmt.Println(targets)
+	in = inv.Materialize()
+	repeates := numAnchors / (in.Shape()[1] / (5 + op.numClasses))
+	inr, err := tensor.Concat(1, in)
+	for i := 1; i < repeates; i++ {
+		inr, err = tensor.Concat(1, inr, in)
+	}
+	outyolo, _ := op.yoloDoer(inr, batch, stride, grid, bboxAttrs, numAnchors, op.anchors)
+	yboxes32 := make([]float32, 0)
+	switch outyolo.Dtype() {
+	case Float32:
+		outyolo.Reshape(outyolo.Shape()[0] * outyolo.Shape()[1] * outyolo.Shape()[2])
+		for i := 0; i < outyolo.Shape()[0]; i++ {
+			buf, _ := outyolo.At(i)
 			yboxes32 = append(yboxes32, buf.(float32))
 		}
 		break
 	case Float64:
-		//NOT CHECKED!
-		in.Reshape(in.Shape()[0] * in.Shape()[1] * in.Shape()[2])
-		for i := 0; i < in.Shape()[0]*in.Shape()[1]*in.Shape()[2]; i++ {
-			buf, _ := in.At(i)
+		outyolo.Reshape(outyolo.Shape()[0] * outyolo.Shape()[1] * outyolo.Shape()[2])
+		for i := 0; i < outyolo.Shape()[0]; i++ {
+			buf, _ := outyolo.At(i)
 			yboxes32 = append(yboxes32, float32(buf.(float64)))
 		}
 		break
 	default:
 		panic("Unsupportable type for Yolo")
 	}
+	return outyolo, nil
 
-	return in, nil
 }
 func (op *yoloOp) yoloDoer(in tensor.Tensor, batch, stride, grid, bboxAttrs, numAnchors int, currentAnchors []float64) (retVal tensor.Tensor, err error) {
 	in.Reshape(batch, bboxAttrs*numAnchors, grid*grid)
@@ -343,29 +372,4 @@ func (op *yoloOp) yoloDoer(in tensor.Tensor, batch, stride, grid, bboxAttrs, num
 		panic(err)
 	}
 	return in, nil
-}
-
-//getTensorData32 - returns all elements of a tensor as an array
-func getTensorData32(in tensor.Tensor) []float32 {
-	data := make([]float32, 0)
-	switch in.Dtype() {
-	case tensor.Float32:
-		in.Reshape(in.Shape()[0] * in.Shape()[1] * in.Shape()[2])
-		for i := 0; i < in.Shape()[0]; i++ {
-			buf, _ := in.At(i)
-			data = append(data, buf.(float32))
-		}
-		break
-	case tensor.Float64:
-		//NOT CHECKED!
-		in.Reshape(in.Shape()[0] * in.Shape()[1] * in.Shape()[2])
-		for i := 0; i < in.Shape()[0]*in.Shape()[1]*in.Shape()[2]; i++ {
-			buf, _ := in.At(i)
-			data = append(data, buf.(float32))
-		}
-		break
-	default:
-		panic("Unsupportable type for Yolo")
-	}
-	return data
 }

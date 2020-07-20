@@ -75,11 +75,10 @@ func GetTensorData32(in tensor.Tensor) []float32 {
 		}
 		break
 	case tensor.Float64:
-		//NOT CHECKED!
 		in.Reshape(in.Shape()[0] * in.Shape()[1] * in.Shape()[2])
-		for i := 0; i < in.Shape()[0]*in.Shape()[1]*in.Shape()[2]; i++ {
+		for i := 0; i < in.Shape()[0]; i++ {
 			buf, _ := in.At(i)
-			data = append(data, buf.(float32))
+			data = append(data, float32(buf.(float64)))
 		}
 		break
 	default:
