@@ -194,7 +194,7 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 		in.Reshape(in.Shape()[0] * in.Shape()[1] * in.Shape()[2])
 		for i := 0; i < in.Shape()[0]*in.Shape()[1]*in.Shape()[2]; i++ {
 			buf, _ := in.At(i)
-			yboxes32 = append(yboxes32, buf.(float32))
+			yboxes32 = append(yboxes32, float32(buf.(float64)))
 		}
 		break
 	default:
