@@ -33,11 +33,14 @@ func newYoloOp(anchors []float64, mask []int, imheight, numclasses int, ignoreTr
 //YoloDetector yolov3 output layer
 func YoloDetector(x *Node, anchors []float64, mask []int, imheight, numclasses int, ignoreTresh float64, target ...*Node) (*Node, error) {
 	if len(target) > 0 {
-		//x, err := Concat(1, x, target[0])
-		//fmt.Println(err)
-		fmt.Println("concattttttt")
+		sx, _ := Slice(x, S(0), nil, nil, nil)
+		st, _ := Slice(target[0], S(0), nil, nil, nil)
+		rx := Must(Concat(0, sx, st))
+		rx = Must(Reshape(rx, []int{1, rx.Shape()[0], rx.Shape()[1], rx.Shape()[2]}))
+		//fmt.Println(nx.Value(), err)
+		//fmt.Println("concattttttt")
 		op := newYoloOp(anchors, mask, imheight, numclasses, ignoreTresh, true)
-		retVal, err := ApplyOp(op, x)
+		retVal, err := ApplyOp(op, rx)
 		return retVal, err
 	}
 	op := newYoloOp(anchors, mask, imheight, numclasses, ignoreTresh, false)
@@ -63,6 +66,10 @@ func (op *yoloOp) String() string {
 }
 func (op *yoloOp) InferShape(inputs ...DimSizer) (tensor.Shape, error) {
 	s := inputs[0].(tensor.Shape).Clone()
+	if op.train {
+		return []int{1, 8112, 85}, nil
+		return []int{s[0], s[1] - 1, s[2], s[3]}, nil
+	}
 	return s, nil
 }
 
@@ -70,7 +77,8 @@ func (op *yoloOp) Type() hm.Type {
 
 	a := hm.TypeVariable('a')
 	t := newTensorType(4, a)
-	return hm.NewFnType(t, t)
+	o := newTensorType(3, a)
+	return hm.NewFnType(t, o)
 
 }
 func (op *yoloOp) OverwritesInput() int { return -1 }
@@ -160,13 +168,18 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 		return op.yoloDoer(in, batch, stride, grid, bboxAttrs, numAnchors, currentAnchors)
 	}
 	in, _ := op.checkInput(inputs...)
-	fmt.Println(in.Shape(), "test")
+	fmt.Println(in.Shape(), "before slice")
+	inv, _ := in.Slice(nil, S(0, 255), nil, nil)
+	in = inv.Materialize()
+	fmt.Println(inv.Shape(), in.Shape(), "after slice")
 	batch := in.Shape()[0]
 	stride := int(op.inpDim / in.Shape()[2])
 	grid := in.Shape()[2]
 	bboxAttrs := 5 + op.numClasses
 	numAnchors := len(op.anchors) / 2
 	in, _ = op.yoloDoer(in, batch, stride, grid, bboxAttrs, numAnchors, op.anchors)
+
+	return in, nil
 	yboxes32 := make([]float32, 0)
 	switch in.Dtype() {
 	case Float32:
@@ -207,6 +220,7 @@ func (op *yoloOp) yoloDoer(in tensor.Tensor, batch, stride, grid, bboxAttrs, num
 		//View with the same Y coordinate (row)
 		vy, err := in.Slice(nil, S(ind*step, ind*step+step), S(1))
 		if err != nil {
+			fmt.Println("1")
 			panic(err)
 		}
 		switch in.Dtype() {
@@ -220,6 +234,7 @@ func (op *yoloOp) yoloDoer(in tensor.Tensor, batch, stride, grid, bboxAttrs, num
 			panic("Unsupportable type for Yolo")
 		}
 		if err != nil {
+			fmt.Println("2")
 			panic(err)
 		}
 
@@ -228,6 +243,7 @@ func (op *yoloOp) yoloDoer(in tensor.Tensor, batch, stride, grid, bboxAttrs, num
 			//View with the same X coordinate (column)
 			vx, err := in.Slice(nil, S(ind*numAnchors+n, in.Shape()[1], step), S(0))
 			if err != nil {
+				fmt.Println("3")
 				panic(err)
 			}
 			switch in.Dtype() {
@@ -273,12 +289,14 @@ func (op *yoloOp) yoloDoer(in tensor.Tensor, batch, stride, grid, bboxAttrs, num
 	case Float32:
 		_, err = tensor.Div(anch, float32(stride), tensor.UseUnsafe())
 		if err != nil {
+			fmt.Println("4")
 			panic(err)
 		}
 		break
 	case Float64:
 		_, err = tensor.Div(anch, float64(stride), tensor.UseUnsafe())
 		if err != nil {
+			fmt.Println("5")
 			panic(err)
 		}
 		break
@@ -286,6 +304,7 @@ func (op *yoloOp) yoloDoer(in tensor.Tensor, batch, stride, grid, bboxAttrs, num
 		panic("Unsupportable type for Yolo")
 	}
 	if err != nil {
+		fmt.Println("6")
 		panic(err)
 	}
 
@@ -298,12 +317,14 @@ func (op *yoloOp) yoloDoer(in tensor.Tensor, batch, stride, grid, bboxAttrs, num
 	_, err = tensor.Mul(vhw, anch, tensor.UseUnsafe())
 	if err != nil {
 		fmt.Println(vhw.Dtype(), anch.Dtype(), in.Dtype())
+		fmt.Println("7")
 		panic(err)
 	}
 	// fmt.Println(one)
 
 	vv, err := in.Slice(nil, nil, S(0, 4))
 	if err != nil {
+		fmt.Println("8")
 		panic(err)
 	}
 
@@ -318,6 +339,7 @@ func (op *yoloOp) yoloDoer(in tensor.Tensor, batch, stride, grid, bboxAttrs, num
 		panic("Unsupportable type for Yolo")
 	}
 	if err != nil {
+		fmt.Println("9")
 		panic(err)
 	}
 	return in, nil
