@@ -371,15 +371,19 @@ func iou(r1, r2 image.Rectangle) float32 {
 	r2Area := r2.Dx() * r2.Dy()
 	return float32(interArea) / float32(r1Area+r2Area-interArea)
 }
-func (op *yoloOp) prepTmpIous(input, target []float32) [][]float32 {
+func (op *yoloOp) prepBestIous(input, target []float32) [][]float32 {
 	ious := make([][]float32, 0)
 	imgsize := float32(op.inpDim)
 	for i := 0; i < len(input); i = i + op.numClasses + 5 {
-		ious = append(ious, []float32{})
+		ious = append(ious, []float32{-1, -1})
 		for j := 0; j < len(target); j = j + 5 {
 			r1 := rectifyBox(input[i], input[i+1], input[i+2], input[i+3], op.inpDim)
 			r2 := rectifyBox(target[j+1]*imgsize, target[j+2]*imgsize, target[j+3]*imgsize, target[j+4]*imgsize, op.inpDim)
-			ious[i/(op.numClasses+5)] = append(ious[i/(op.numClasses+5)], iou(r1, r2))
+			curiou := iou(r1, r2)
+			if curiou > ious[i/85][0] {
+				ious[i/85][0] = curiou
+				ious[i/85][1] = j / 5
+			}
 		}
 	}
 	return ious
