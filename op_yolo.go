@@ -6,6 +6,7 @@ import (
 	"github.com/pkg/errors"
 	"gorgonia.org/tensor"
 	"hash"
+	"image"
 	"math"
 )
 
@@ -65,10 +66,9 @@ func (op *yoloOp) String() string {
 func (op *yoloOp) InferShape(inputs ...DimSizer) (tensor.Shape, error) {
 	s := inputs[0].(tensor.Shape).Clone()
 	if op.train {
-		return []int{1, 8112, 85}, nil
-		return []int{s[0], s[1] - 1, s[2], s[3]}, nil
+		return []int{s[0], s[2] * s[3] * len(op.mask), (s[1] - 1) / len(op.mask)}, nil
 	}
-	return s, nil
+	return []int{s[0], s[2] * s[3] * len(op.mask), s[1] / len(op.mask)}, nil
 }
 
 func (op *yoloOp) Type() hm.Type {
@@ -173,14 +173,6 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	grid := in.Shape()[2]
 	bboxAttrs := 5 + op.numClasses
 	numAnchors := len(op.anchors) / 2
-	currentAnchors := []float64{}
-	for _, i := range op.mask {
-		if i >= (len(op.anchors) / 2) {
-			return nil, errors.New("Incorrect mask for anchors on yolo layer with name" + fmt.Sprint(op.mask))
-		}
-		currentAnchors = append(currentAnchors, op.anchors[i*2], op.anchors[i*2+1])
-	}
-	fmt.Println(numTargets)
 	var targets []float32
 	switch in.Dtype() {
 	case Float32:
@@ -202,7 +194,6 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	default:
 		panic("Unsupportable type for Yolo")
 	}
-	fmt.Println(targets)
 	in = inv.Materialize()
 	repeates := numAnchors / (in.Shape()[1] / (5 + op.numClasses))
 	inr, err := tensor.Concat(1, in)
@@ -372,4 +363,40 @@ func (op *yoloOp) yoloDoer(in tensor.Tensor, batch, stride, grid, bboxAttrs, num
 		panic(err)
 	}
 	return in, nil
+}
+func iou(r1, r2 image.Rectangle) float32 {
+	intersection := r1.Intersect(r2)
+	interArea := intersection.Dx() * intersection.Dy()
+	r1Area := r1.Dx() * r1.Dy()
+	r2Area := r2.Dx() * r2.Dy()
+	return float32(interArea) / float32(r1Area+r2Area-interArea)
+}
+func (op *yoloOp) prepTmpIous(input, target []float32) [][]float32 {
+	ious := make([][]float32, 0)
+	imgsize := float32(op.inpDim)
+	for i := 0; i < len(input); i = i + op.numClasses + 5 {
+		ious = append(ious, []float32{})
+		for j := 0; j < len(target); j = j + 5 {
+			r1 := rectifyBox(input[i], input[i+1], input[i+2], input[i+3], op.inpDim)
+			r2 := rectifyBox(target[j+1]*imgsize, target[j+2]*imgsize, target[j+3]*imgsize, target[j+4]*imgsize, op.inpDim)
+			ious[i/(op.numClasses+5)] = append(ious[i/(op.numClasses+5)], iou(r1, r2))
+		}
+	}
+	return ious
+}
+func rectifyBox(x, y, h, w float32, imgsize int) image.Rectangle {
+	return image.Rect(max(int(x-w/2), 0), max(int(y-h/2), 0), min(int(x+w/2+1), imgsize), min(int(y+h/2+1), imgsize))
+}
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
