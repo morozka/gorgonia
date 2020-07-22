@@ -202,12 +202,6 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 		panic("Unsupportable type for Yolo")
 	}
 	in = inv.Materialize()
-	/*
-		repeates := numAnchors / (in.Shape()[1] / (5 + op.numClasses))
-		inr, err := tensor.Concat(1, in)
-		for i := 1; i < repeates; i++ {
-			inr, err = tensor.Concat(1, inr, in)
-		}*/
 	outyolo, _ := op.yoloDoer(in, batch, stride, grid, bboxAttrs, numAnchors, currentAnchors)
 	yboxes32 := make([]float32, 0)
 	switch outyolo.Dtype() {
@@ -228,6 +222,11 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	default:
 		panic("Unsupportable type for Yolo")
 	}
+	fmt.Println(op.prepBestAnchors(targets, 52))
+	//for i := 0; i < len(yboxes32); i = i + 85 {
+	//fmt.Println(yboxes32[i], yboxes32[i+1])
+	//}
+
 	return outyolo, nil
 
 }
@@ -385,38 +384,63 @@ func (op *yoloOp) prepBestIous(input, target []float32) [][]float32 {
 	ious := make([][]float32, 0)
 	imgsize := float32(op.inpDim)
 	for i := 0; i < len(input); i = i + op.numClasses + 5 {
-		ious = append(ious, []float32{-1, -1})
+		ious = append(ious, []float32{0, -1})
 		r1 := rectifyBox(input[i], input[i+1], input[i+2], input[i+3], op.inpDim)
 		for j := 0; j < len(target); j = j + 5 {
 			r2 := rectifyBox(target[j+1]*imgsize, target[j+2]*imgsize, target[j+3]*imgsize, target[j+4]*imgsize, op.inpDim)
 			curiou := iou(r1, r2)
-			if curiou > ious[i/85][0] {
-				ious[i/85][0] = curiou
-				ious[i/85][1] = float32(j / 5)
+			if curiou > ious[i/(5+op.numClasses)][0] {
+				ious[i/(5+op.numClasses)][0] = curiou
+				ious[i/(5+op.numClasses)][1] = float32(j / 5)
 			}
 		}
 	}
 	return ious
 }
 
-//returns -1 if best anchor is not in the mask, else returns num of box
-func (op *yoloOp) prepBestAnchor(target []float32) []int {
-	bestAnchors := make([]int, len(target)/5, len(target)/5)
+//returns -1 if best anchor is not in the mask, else returns num of box with its coords; correct for yolov3 only!;
+func (op *yoloOp) prepBestAnchors(target []float32, gridSize float32) [][]int {
+	bestAnchors := make([][]int, len(target)/5, len(target)/5)
 	imgsize := float32(op.inpDim)
 	for j := 0; j < len(target); j = j + 5 {
-		r2 := rectifyBox(0, 0, target[j+3]*imgsize, target[j+4]*imgsize, op.inpDim)
+		r2 := rectifyBox(0, 0, target[j+3]*imgsize, target[j+4]*imgsize, op.inpDim) //not absolutely confident in rectangle sizes
 		var bestiou float32
 		bestiou = 0.0
+		bestAnchors[j/5] = make([]int, 3)
 		for i := 0; i < len(op.anchors); i = i + 2 {
 			r1 := rectifyBox(0, 0, float32(op.anchors[i]), float32(op.anchors[i+1]), op.inpDim)
 			curiou := iou(r1, r2)
 			if curiou >= bestiou {
-				bestAnchors[j/5] = indexInt(op.mask, i/2)
+				bestAnchors[j/5][0] = i
 				bestiou = curiou
 			}
 		}
+		bestAnchors[j/5][0] = indexInt(op.mask, bestAnchors[j/5][0]/2)
+		if bestAnchors[j/5][0] != -1 {
+			bestAnchors[j/5][1] = int(target[j+1] * gridSize)
+			bestAnchors[j/5][2] = int(target[j+2] * gridSize)
+		}
 	}
 	return bestAnchors
+}
+
+//returns array with values, that yolo layer should have
+func (op *yoloOp) prepRT(input, yoloBoxes, target []float32, gridSize int) []float32 {
+	rt := make([]float32, len(yoloBoxes), len(yoloBoxes))
+	bestAnchors := op.prepBestAnchors(target, float32(gridSize))
+	bestIous := op.prepBestIous(yoloBoxes, target)
+	for i := 0; i < len(yoloBoxes); i = i + (5 + op.numClasses) {
+		if bestIous[i/(5+op.numClasses)][0] > float32(op.ignoreTresh) {
+			rt[i+4] = -input[i+4]
+		}
+	}
+	for i := 0; i < len(bestAnchors); i++ {
+		if bestAnchors[i][0] != -1 {
+			scale := (2 - target[i*5+3]*target[i*5+4])
+			_ = scale
+		}
+	}
+	return rt
 }
 func indexInt(arr []int, k int) int {
 	for i, j := range arr {

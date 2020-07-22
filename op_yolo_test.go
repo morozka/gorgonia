@@ -37,7 +37,7 @@ func TestYolo(t *testing.T) {
 		WithShape(output.Shape()...),
 		WithName("inp3"),
 	)
-	out := Must(YoloDetector(inp, []float64{10, 13, 16, 30, 33, 23, 10, 13, 16, 30, 33, 23}, []int{0, 1, 2}, 416, 80, 0.5, inp2))
+	out := Must(YoloDetector(inp, []float64{10, 14, 23, 27, 37, 58, 81, 82, 135, 169, 344, 319}, []int{0, 1, 2}, 416, 80, 0.5, inp2))
 	//n0 := Must(Reshape(out, []int{8112 * 85}))
 	//n1 := Must(Reshape(inp3, []int{8112 * 85}))
 	//n2 := Must(Sub(n1, n0))
