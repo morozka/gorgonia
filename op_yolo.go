@@ -2,12 +2,13 @@ package gorgonia
 
 import (
 	"fmt"
-	"github.com/chewxy/hm"
-	"github.com/pkg/errors"
-	"gorgonia.org/tensor"
 	"hash"
 	"image"
 	"math"
+
+	"github.com/chewxy/hm"
+	"github.com/pkg/errors"
+	"gorgonia.org/tensor"
 )
 
 type yoloOp struct {
@@ -202,33 +203,53 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 		panic("Unsupportable type for Yolo")
 	}
 	in = inv.Materialize()
+	in.Reshape(batch, bboxAttrs*numAnchors, grid*grid)
+	in.T(0, 2, 1)
+	in.Transpose()
+	in.Reshape(batch, grid*grid*numAnchors, bboxAttrs)
+	rin := in.Clone().(tensor.Tensor)
 	outyolo, _ := op.yoloDoer(in, batch, stride, grid, bboxAttrs, numAnchors, currentAnchors)
 	yboxes32 := make([]float32, 0)
+	input32 := make([]float32, 0)
 	switch outyolo.Dtype() {
 	case Float32:
+		rin.Reshape(in.Shape()[0] * in.Shape()[1] * in.Shape()[2])
 		outyolo.Reshape(outyolo.Shape()[0] * outyolo.Shape()[1] * outyolo.Shape()[2])
 		for i := 0; i < outyolo.Shape()[0]; i++ {
 			buf, _ := outyolo.At(i)
 			yboxes32 = append(yboxes32, buf.(float32))
+			buf, _ = rin.At(i)
+			input32 = append(input32, buf.(float32))
 		}
 		break
 	case Float64:
+		rin.Reshape(in.Shape()[0] * in.Shape()[1] * in.Shape()[2])
 		outyolo.Reshape(outyolo.Shape()[0] * outyolo.Shape()[1] * outyolo.Shape()[2])
 		for i := 0; i < outyolo.Shape()[0]; i++ {
 			buf, _ := outyolo.At(i)
 			yboxes32 = append(yboxes32, float32(buf.(float64)))
+			buf, _ = rin.At(i)
+			input32 = append(input32, float32(buf.(float64)))
 		}
 		break
 	default:
 		panic("Unsupportable type for Yolo")
 	}
-	fmt.Println(op.prepBestAnchors(targets, 52))
-	//for i := 0; i < len(yboxes32); i = i + 85 {
-	//fmt.Println(yboxes32[i], yboxes32[i+1])
-	//}
-
-	return outyolo, nil
-
+	res := op.prepRT(input32, yboxes32, targets, grid)
+	switch outyolo.Dtype() {
+	case Float32:
+		resten := tensor.New(tensor.WithShape(1, grid*grid*len(op.mask), 5+op.numClasses), tensor.Of(tensor.Float32), tensor.WithBacking(res))
+		return resten, nil
+	case Float64:
+		res64 := make([]float64, len(res), len(res))
+		for i := 0; i < len(res); i++ {
+			res64[i] = float64(res[i])
+		}
+		resten := tensor.New(tensor.WithShape(1, grid*grid*len(op.mask), 5+op.numClasses), tensor.Of(tensor.Float64), tensor.WithBacking(res64))
+		return resten, nil
+	default:
+		panic("Unsupportable type for Yolo")
+	}
 }
 func (op *yoloOp) yoloDoer(in tensor.Tensor, batch, stride, grid, bboxAttrs, numAnchors int, currentAnchors []float64) (retVal tensor.Tensor, err error) {
 	in.Reshape(batch, bboxAttrs*numAnchors, grid*grid)
@@ -427,17 +448,39 @@ func (op *yoloOp) prepBestAnchors(target []float32, gridSize float32) [][]int {
 //returns array with values, that yolo layer should have
 func (op *yoloOp) prepRT(input, yoloBoxes, target []float32, gridSize int) []float32 {
 	rt := make([]float32, len(yoloBoxes), len(yoloBoxes))
+	gsf32 := float32(gridSize)
 	bestAnchors := op.prepBestAnchors(target, float32(gridSize))
 	bestIous := op.prepBestIous(yoloBoxes, target)
 	for i := 0; i < len(yoloBoxes); i = i + (5 + op.numClasses) {
-		if bestIous[i/(5+op.numClasses)][0] > float32(op.ignoreTresh) {
-			rt[i+4] = -input[i+4]
+		if bestIous[i/(5+op.numClasses)][0] <= float32(op.ignoreTresh) {
+			rt[i+4] = bceLoss(0, yoloBoxes[i+4])
 		}
 	}
 	for i := 0; i < len(bestAnchors); i++ {
 		if bestAnchors[i][0] != -1 {
 			scale := (2 - target[i*5+3]*target[i*5+4])
-			_ = scale
+
+			gi := bestAnchors[i][1]
+			gj := bestAnchors[i][2]
+			gx := target[i*5+1]*gsf32 - float32(gi)
+			gy := target[i*5+2]*gsf32 - float32(gi)
+			gw := float32(math.Log(float64(target[i*5+3])/op.anchors[bestAnchors[i][0]] + 1e-16))
+			gh := float32(math.Log(float64(target[i*5+4])/op.anchors[bestAnchors[i][0]+1] + 1e-16))
+			boxi := gj*gridSize*len(op.mask) + gi*len(op.mask) + bestAnchors[i][0]
+			rt[boxi] = mseLoss(gx, input[boxi], scale)
+
+			rt[boxi+1] = mseLoss(gy, input[boxi+1], scale)
+			rt[boxi+2] = mseLoss(gw, input[boxi+2], scale)
+			rt[boxi+3] = mseLoss(gh, input[boxi+3], scale)
+			rt[boxi+4] = bceLoss(1, yoloBoxes[boxi+4])
+			for j := 0; j < op.numClasses; j++ {
+				if j == int(target[i]) {
+					rt[boxi+5+j] = bceLoss(1, yoloBoxes[boxi+4])
+				} else {
+					rt[boxi+5+j] = bceLoss(0, yoloBoxes[boxi+4])
+				}
+			}
+			fmt.Println(rt[boxi : boxi+85])
 		}
 	}
 	return rt
@@ -465,4 +508,15 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+//with min value of log=-35
+func bceLoss(target, pred float32) float32 {
+	if target == 1.0 {
+		return float32(math.Log(float64(pred) + 1e-16))
+	}
+	return float32(math.Log((1.0 - float64(pred)) + 1e-16))
+}
+func mseLoss(target, pred, scale float32) float32 {
+	return float32(math.Pow(float64(scale*(target-pred)), 2)) / 2.0
 }
