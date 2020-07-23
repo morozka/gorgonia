@@ -1,9 +1,9 @@
 package gorgonia
 
 import (
+	"errors"
 	"os"
 	"testing"
-
 	//"github.com/stretchr/testify/assert"
 	"gorgonia.org/tensor"
 
@@ -91,6 +91,9 @@ func prepareTrain32(pathToDir string, gridSize int) (*tensor.Dense, error) {
 		arr := strings.Split(str, " ")
 		for i := 0; i < len(arr); i++ {
 			if s, err := strconv.ParseFloat(arr[i], 32); err == nil {
+				if float32(s) < 0 {
+					return &tensor.Dense{}, errors.New("incorrect training data")
+				}
 				cfarr = append(cfarr, float32(s))
 			} else {
 				return &tensor.Dense{}, err

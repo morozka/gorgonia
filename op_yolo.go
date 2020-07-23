@@ -479,10 +479,6 @@ func (op *yoloOp) prepRT(input, yoloBoxes, target []float32, gridSize int) []flo
 					rt[boxi+5+j] = bceLoss(0, yoloBoxes[boxi+4])
 				}
 			}
-			fmt.Println(gx, gy, gw, gh)
-			fmt.Println(input[boxi : boxi+85])
-			fmt.Println(yoloBoxes[boxi : boxi+85])
-			fmt.Println(rt[boxi : boxi+85])
 		}
 	}
 	return rt

@@ -19,34 +19,36 @@ func Float32frombytes(bytes []byte) float32 {
 }
 
 //PrepareTrain32 - prepares training tensor
-func PrepareTrain32(pathToDir string, gridSize int) (tensor.Tensor, error) {
+func PrepareTrain32(pathToDir string, gridSize int) (*tensor.Dense, error) {
 	files, err := ioutil.ReadDir(pathToDir)
 	if err != nil {
-		return nil, err
+		return &tensor.Dense{}, err
 	}
 	farr := [][]float32{}
 	maxLen := gridSize * gridSize
 	numTrainFiles := 0
 	for _, file := range files {
 		cfarr := []float32{}
-		fmt.Println(file.IsDir(), filepath.Ext(file.Name()))
 		if file.IsDir() || filepath.Ext(file.Name()) != ".txt" {
 			continue
 		}
 		numTrainFiles++
 		f, err := ioutil.ReadFile(pathToDir + "/" + file.Name())
 		if err != nil {
-			return nil, err
+			return &tensor.Dense{}, err
 		}
 		str := string(f)
-
+		fmt.Println(str)
 		str = strings.ReplaceAll(str, "\n", " ")
 		arr := strings.Split(str, " ")
 		for i := 0; i < len(arr); i++ {
 			if s, err := strconv.ParseFloat(arr[i], 32); err == nil {
+				if float32(s) < 0 {
+					return &tensor.Dense{}, errors.New("incorrect training data")
+				}
 				cfarr = append(cfarr, float32(s))
 			} else {
-				return nil, err
+				return &tensor.Dense{}, err
 			}
 		}
 		farr = append(farr, cfarr)
@@ -56,7 +58,7 @@ func PrepareTrain32(pathToDir string, gridSize int) (tensor.Tensor, error) {
 		backArr = append(backArr, float32(len(farr[i])))
 		backArr = append(backArr, farr[i]...)
 		if len(farr[i]) < maxLen {
-			zeroes := make([]float32, maxLen-len(farr[i]))
+			zeroes := make([]float32, maxLen-len(farr[i])-1)
 			backArr = append(backArr, zeroes...)
 		}
 	}
