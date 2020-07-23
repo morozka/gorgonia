@@ -462,13 +462,12 @@ func (op *yoloOp) prepRT(input, yoloBoxes, target []float32, gridSize int) []flo
 
 			gi := bestAnchors[i][1]
 			gj := bestAnchors[i][2]
-			gx := target[i*5+1]*gsf32 - float32(gi)
-			gy := target[i*5+2]*gsf32 - float32(gi)
+			gx := unsigm(target[i*5+1]*gsf32 - float32(gi))
+			gy := unsigm(target[i*5+2]*gsf32 - float32(gi))
 			gw := float32(math.Log(float64(target[i*5+3])/op.anchors[bestAnchors[i][0]] + 1e-16))
 			gh := float32(math.Log(float64(target[i*5+4])/op.anchors[bestAnchors[i][0]+1] + 1e-16))
 			boxi := gj*gridSize*len(op.mask) + gi*len(op.mask) + bestAnchors[i][0]
 			rt[boxi] = mseLoss(gx, input[boxi], scale)
-
 			rt[boxi+1] = mseLoss(gy, input[boxi+1], scale)
 			rt[boxi+2] = mseLoss(gw, input[boxi+2], scale)
 			rt[boxi+3] = mseLoss(gh, input[boxi+3], scale)
@@ -480,6 +479,9 @@ func (op *yoloOp) prepRT(input, yoloBoxes, target []float32, gridSize int) []flo
 					rt[boxi+5+j] = bceLoss(0, yoloBoxes[boxi+4])
 				}
 			}
+			fmt.Println(gx, gy, gw, gh)
+			fmt.Println(input[boxi : boxi+85])
+			fmt.Println(yoloBoxes[boxi : boxi+85])
 			fmt.Println(rt[boxi : boxi+85])
 		}
 	}
@@ -519,4 +521,7 @@ func bceLoss(target, pred float32) float32 {
 }
 func mseLoss(target, pred, scale float32) float32 {
 	return float32(math.Pow(float64(scale*(target-pred)), 2)) / 2.0
+}
+func unsigm(target float32) float32 {
+	return float32(-math.Log(float64(1-target+1e-16)) + math.Log(float64(target+1e-16)))
 }
