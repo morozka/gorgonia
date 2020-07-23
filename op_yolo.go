@@ -511,9 +511,9 @@ func min(a, b int) int {
 //with min value of log=-35
 func bceLoss(target, pred float32) float32 {
 	if target == 1.0 {
-		return float32(math.Log(float64(pred) + 1e-16))
+		return -float32(math.Log(float64(pred) + 1e-16))
 	}
-	return float32(math.Log((1.0 - float64(pred)) + 1e-16))
+	return -float32(math.Log((1.0 - float64(pred)) + 1e-16))
 }
 func mseLoss(target, pred, scale float32) float32 {
 	return float32(math.Pow(float64(scale*(target-pred)), 2)) / 2.0
