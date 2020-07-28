@@ -23,16 +23,6 @@ type YoloV3Tiny struct {
 	kernels map[string][]float32
 }
 
-// type layer struct {
-// 	name    string
-// 	shape   tensor.Shape
-// 	biases  []float32
-// 	gammas  []float32
-// 	means   []float32
-// 	vars    []float32
-// 	kernels []float32
-// }
-
 // NewYoloV3Tiny Create new tiny YOLO v3
 func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, boxesPerCell int, leakyCoef float64, cfgFile, weightsFile string) (*YoloV3Tiny, error) {
 	inputS := input.Shape()
@@ -362,6 +352,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 	lastIdx := 5 // skip first 5 values
 	epsilon := float32(0.000001)
 
+	weightsData = weightsData[lastIdx:]
 	ptr := 0
 	for i := range layers {
 		l := *layers[i]
@@ -403,6 +394,6 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 		}
 	}
 
-	_, _ = lastIdx, epsilon
+	_ = epsilon
 	return nil, nil
 }

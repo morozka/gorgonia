@@ -34,19 +34,23 @@ func main() {
 
 	imgf32, err := GetFloat32Image("data/dog_416x416.jpg")
 	if err != nil {
-		log.Fatalln(err)
+		fmt.Printf("Can't read []float32 from image due the error: %s\n", err.Error())
+		return
 	}
 
 	image := tensor.New(tensor.WithShape(1, channels, height, width), tensor.Of(tensor.Float32), tensor.WithBacking(imgf32))
 	err = gorgonia.Let(input, image)
 	if err != nil {
+		fmt.Printf("Can't let input = []float32 due the error: %s\n", err.Error())
+		return
 	}
 
 	tm := G.NewTapeMachine(g)
 	defer tm.Close()
 	st := time.Now()
 	if err := tm.RunAll(); err != nil {
-		log.Fatalf("%+v", err)
+		fmt.Printf("Can't run tape machine due the error: %s\n", err.Error())
+		return
 	}
 	fmt.Println("Feedforwarded in:", time.Since(st))
 
