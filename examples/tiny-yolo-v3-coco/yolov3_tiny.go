@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 
+	"github.com/chewxy/math32"
 	"github.com/pkg/errors"
 	"gorgonia.org/gorgonia"
+
 	"gorgonia.org/tensor"
 )
 
@@ -144,7 +145,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 
 					// denormalize weights
 					for s := 0; s < shp[0]; s++ {
-						scale := gammas[s] / float32(math.Sqrt(float64(vars[s]+epsilon)))
+						scale := gammas[s] / math32.Sqrt(vars[s]+epsilon)
 						biases[s] = biases[s] - means[s]*scale
 						isize := shp[1] * shp[2] * shp[3]
 						for j := 0; j < isize; j++ {
@@ -441,6 +442,5 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 	// 	}
 	// }
 
-	_ = epsilon
 	return nil, nil
 }
