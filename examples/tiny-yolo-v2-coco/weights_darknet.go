@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"math"
 	"os"
@@ -81,6 +82,7 @@ func DenormalizeWeights(biases, gammas, means, vars, kernels map[string][]float3
 	varsExtract := vars[layerName]
 	kernelsExtract := kernels[layerName]
 
+	fmt.Println(len(kernelsExtract))
 	for i := 0; i < convShape[0]; i++ {
 		scale := gammasExtract[i] / float32(math.Sqrt(float64(varsExtract[i]+epsilon)))
 

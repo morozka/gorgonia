@@ -16,10 +16,12 @@ type convLayer struct {
 	activation     string
 	batchNormalize int
 	bias           bool
+	biases         []float32
 
 	layerIndex int
 
 	convNode       *gorgonia.Node
+	biasNode       *gorgonia.Node
 	batchNormNode  *gorgonia.Node
 	activationNode *gorgonia.Node
 
@@ -46,18 +48,35 @@ func (l *convLayer) ToNode(g *gorgonia.ExprGraph, input ...*gorgonia.Node) (*gor
 	}
 
 	if l.batchNormalize > 0 {
-		scale := gorgonia.NewTensor(g, gorgonia.Float32, 4, gorgonia.WithShape(convOut.Shape()...), gorgonia.WithName(fmt.Sprintf("scale_%d", l.layerIndex)))
-		bias := gorgonia.NewTensor(g, gorgonia.Float32, 4, gorgonia.WithShape(convOut.Shape()...), gorgonia.WithName(fmt.Sprintf("bias_%d", l.layerIndex)))
-		l.batchOut, l.gamma, l.beta, l.batchNormOperation, err = gorgonia.BatchNorm(convOut, scale, bias, 0.1, 10e-5)
-		if err != nil {
-			return &gorgonia.Node{}, errors.Wrap(err, "Can't prepare batch normalization operation")
-		}
+		// scale := gorgonia.NewTensor(g, gorgonia.Float32, 4, gorgonia.WithShape(convOut.Shape()...), gorgonia.WithName(fmt.Sprintf("scale_%d", l.layerIndex)))
+		// bias := gorgonia.NewTensor(g, gorgonia.Float32, 4, gorgonia.WithShape(convOut.Shape()...), gorgonia.WithName(fmt.Sprintf("bias_%d", l.layerIndex)))
+		// l.batchOut, l.gamma, l.beta, l.batchNormOperation, err = gorgonia.BatchNorm(convOut, scale, bias, 0.1, 10e-5)
+		// if err != nil {
+		// 	return &gorgonia.Node{}, errors.Wrap(err, "Can't prepare batch normalization operation")
+		// }
+		l.batchOut = convOut
 	} else {
 		l.batchOut = convOut
 	}
 
+	shp := convOut.Shape()
+	iters := shp.TotalSize() / len(l.biases)
+	newArr := []float32{}
+	for b := 0; b < len(l.biases); b++ {
+		for j := 0; j < iters; j++ {
+			newArr = append(newArr, l.biases[b])
+		}
+	}
+	biasTensor := tensor.New(tensor.WithBacking(newArr), tensor.WithShape(shp...))
+	biasNode := gorgonia.NewTensor(g, tensor.Float32, 4, gorgonia.WithShape(shp...), gorgonia.WithName(fmt.Sprintf("bias_%d", l.layerIndex)), gorgonia.WithValue(biasTensor))
+
+	biasOut, err := gorgonia.Add(convOut, biasNode)
+	if err != nil {
+		return &gorgonia.Node{}, errors.Wrap(err, "Can't prepare bias add operation")
+	}
+
 	if l.activation == "leaky" {
-		activationOut, err := gorgonia.LeakyRelu(l.batchOut, 0.1)
+		activationOut, err := gorgonia.LeakyRelu(biasOut, 0.1)
 		if err != nil {
 			return &gorgonia.Node{}, errors.Wrap(err, "Can't prepare activation operation")
 		}
