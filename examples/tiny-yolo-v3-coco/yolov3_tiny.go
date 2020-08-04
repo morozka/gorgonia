@@ -50,10 +50,8 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 	networkNodes := []*gorgonia.Node{}
 
 	blocks := buildingBlocks[1:]
-	lastIdx := 5 // skip first 5 values
+	lastIdx := 5 // Skip first 5 values (header of weights file)
 	epsilon := float32(0.000001)
-	// weightsData = weightsData[lastIdx:]
-	// ptr := 0
 
 	for i := range blocks {
 		block := blocks[i]
@@ -169,15 +167,6 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				ll.biases = biases
 				ll.layerIndex = i
 
-				if batchNormalize != 0 {
-					// batchNormNode := gorgonia.NewTensor(g, tensor.Float32, 1, gorgonia.WithShape(filters), gorgonia.WithName(fmt.Sprintf("batch_norm_%d", i)))
-					// ll.batchNormNode = batchNormNode
-				}
-				if activation == "leaky" {
-					// leakyNode := gorgonia.NewTensor(g, tensor.Float32, 4, gorgonia.WithShape(convNode.Shape()...), gorgonia.WithName(fmt.Sprintf("leaky_%d", i)))
-					// ll.activationNode = leakyNode
-				}
-
 				var l layerN = ll
 				convBlock, err := l.ToNode(g, input)
 				if err != nil {
@@ -187,7 +176,6 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				input = convBlock
 
 				layers = append(layers, &l)
-				fmt.Println(l)
 
 				filtersIdx = filters
 				break
@@ -212,7 +200,6 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				input = upsampleBlock
 
 				layers = append(layers, &l)
-				fmt.Println(l)
 
 				filtersIdx = prevFilters
 				break
@@ -275,8 +262,6 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				input = routeBlock
 
 				layers = append(layers, &ll)
-
-				fmt.Println(ll)
 
 				break
 			case "yolo":
@@ -348,9 +333,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				input = yoloBlock
 
 				layers = append(layers, &l)
-				fmt.Println(l)
 
-				// @todo detection node? or just flow?
 				filtersIdx = prevFilters
 				break
 			case "maxpool":
@@ -379,17 +362,13 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					size:   size,
 					stride: stride,
 				}
-
 				maxpoolingBlock, err := l.ToNode(g, input)
 				if err != nil {
 					fmt.Printf("\tError preparing Max-Pooling block: %s\n", err.Error())
 				}
 				networkNodes = append(networkNodes, maxpoolingBlock)
 				input = maxpoolingBlock
-
 				layers = append(layers, &l)
-				fmt.Println(l)
-
 				filtersIdx = prevFilters
 				break
 			default:
@@ -401,5 +380,8 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 		outputFilters = append(outputFilters, filtersIdx)
 	}
 
+	for i := range layers {
+		fmt.Println(*layers[i])
+	}
 	return &YoloV3Tiny{out: []*gorgonia.Node{networkNodes[16], networkNodes[len(networkNodes)-1]}}, nil
 }
