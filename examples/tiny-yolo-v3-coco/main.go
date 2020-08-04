@@ -2,14 +2,17 @@ package main
 
 import (
 	"fmt"
-	"log"
-	"time"
-
 	"gorgonia.org/gorgonia"
 	G "gorgonia.org/gorgonia"
 	"gorgonia.org/tensor"
+	"log"
+	"strings"
+	"time"
 )
 
+var (
+	classesCoco = "person bicycle car motorbike aeroplane bus train truck boat trafficlight firehydrant stopsign parkingmeter bench bird cat dog horse sheep cow elephant bear zebra giraffe backpack umbrella handbag tie suitcase frisbee skis snowboard sportsball kite baseballbat baseballglove skateboard surfboard tennisracket bottle wineglass cup fork knife spoon bowl banana apple sandwich orange broccoli carrot hotdog pizza donut cake chair sofa pottedplant bed diningtable toilet tvmonitor laptop mouse remote keyboard cellphone microwave oven toaster sink refrigerator book clock vase scissors teddybear	hairdrier toothbrush"
+)
 var (
 	width     = 416
 	height    = 416
@@ -58,11 +61,12 @@ func main() {
 
 	fmt.Println(model.out.Value())
 	if cfg == "./data/yolov3-tiny.cfg" {
+		classesCocoArr := strings.Split(classesCoco, " ")
 		t := model.out.Value().(tensor.Tensor)
 		att := t.Data().([]float32)
 
 		for i := 0; i < len(att); i += 85 {
-			if att[i+4] > 0.5 {
+			if att[i+4] > 0.6 {
 				class := 0
 				var buf float32
 				for j := 5; j < 85; j++ {
@@ -71,7 +75,9 @@ func main() {
 						class = (j - 5) % 80
 					}
 				}
-				fmt.Println(att[i], att[i+1], att[i+2], att[i+3], att[i+4], class, buf)
+				if buf*att[i+4] > 0.5 {
+					fmt.Println(att[i], att[i+1], att[i+2], att[i+3], att[i+4], classesCocoArr[class], buf)
+				}
 			}
 		}
 	}
