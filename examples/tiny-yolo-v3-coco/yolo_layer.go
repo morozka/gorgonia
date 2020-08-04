@@ -5,7 +5,6 @@ import (
 
 	"github.com/pkg/errors"
 	"gorgonia.org/gorgonia"
-	"gorgonia.org/tensor"
 )
 
 type yoloLayer struct {
@@ -37,9 +36,7 @@ func (l *yoloLayer) ToNode(g *gorgonia.ExprGraph, input ...*gorgonia.Node) (*gor
 	if len(inputN.Shape()) == 0 {
 		return nil, fmt.Errorf("Input shape for YOLO layer is nil")
 	}
-	preparedTensor := gorgonia.NewTensor(g, tensor.Float64, 4, gorgonia.WithShape(inputN.Shape()...), gorgonia.WithName("yolo"), gorgonia.WithInit(gorgonia.Zeroes()))
-
-	yoloNode, err := gorgonia.YOLOv3(preparedTensor, l.flattenAhcnors, l.inputSize, l.classesNum)
+	yoloNode, err := gorgonia.YOLOv3(inputN, l.flattenAhcnors, l.inputSize, l.classesNum)
 	if err != nil {
 		return nil, errors.Wrap(err, "Can't prepare YOLOv3 operation")
 	}
