@@ -12,20 +12,20 @@ import (
 	"gorgonia.org/tensor"
 )
 
-// YoloV3Tiny YoloV3 tiny architecture
-type YoloV3Tiny struct {
+// YOLOv3 YOLOv3 architecture
+type YOLOv3 struct {
 	g                        *gorgonia.ExprGraph
 	classesNum, boxesPerCell int
 	out                      []*gorgonia.Node
 }
 
 // GetOutput Get out YOLO layers (can be multiple of them)
-func (net *YoloV3Tiny) GetOutput() []*gorgonia.Node {
+func (net *YOLOv3) GetOutput() []*gorgonia.Node {
 	return net.out
 }
 
 // NewYoloV3Tiny Create new tiny YOLO v3
-func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, boxesPerCell int, leakyCoef float64, cfgFile, weightsFile string) (*YoloV3Tiny, error) {
+func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, boxesPerCell int, leakyCoef float64, cfgFile, weightsFile string) (*YOLOv3, error) {
 	inputS := input.Shape()
 	if len(inputS) < 4 {
 		return nil, fmt.Errorf("Input for YOLOv3 should contain infromation about 4 dimensions")
@@ -387,8 +387,14 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 		outputFilters = append(outputFilters, filtersIdx)
 	}
 
+	// Pretty print
 	for i := range layers {
 		fmt.Println(*layers[i])
 	}
-	return &YoloV3Tiny{classesNum: classesNumber, boxesPerCell: boxesPerCell, out: []*gorgonia.Node{networkNodes[16], networkNodes[len(networkNodes)-1]}}, nil
+
+	return &YOLOv3{
+		classesNum:   classesNumber,
+		boxesPerCell: boxesPerCell,
+		out:          []*gorgonia.Node{networkNodes[16], networkNodes[len(networkNodes)-1]},
+	}, nil
 }
