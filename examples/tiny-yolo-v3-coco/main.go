@@ -61,6 +61,7 @@ func main() {
 		t := model.out[0].Value().(tensor.Tensor)
 		att := t.Data().([]float32)
 
+		fmt.Println("16th layer:")
 		for i := 0; i < len(att); i += 85 {
 			if att[i+4] > 0.6 {
 				class := 0
@@ -79,6 +80,7 @@ func main() {
 		t = model.out[1].Value().(tensor.Tensor)
 		att = t.Data().([]float32)
 
+		fmt.Println("last layer:")
 		for i := 0; i < len(att); i += 85 {
 			if att[i+4] > 0.6 {
 				class := 0

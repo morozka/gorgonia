@@ -14,15 +14,14 @@ import (
 
 // YoloV3Tiny YoloV3 tiny architecture
 type YoloV3Tiny struct {
-	g *gorgonia.ExprGraph
+	g                        *gorgonia.ExprGraph
+	classesNum, boxesPerCell int
+	out                      []*gorgonia.Node
+}
 
-	out []*gorgonia.Node
-
-	biases  map[string][]float32
-	gammas  map[string][]float32
-	means   map[string][]float32
-	vars    map[string][]float32
-	kernels map[string][]float32
+// GetOutput Get out YOLO layers (can be multiple of them)
+func (net *YoloV3Tiny) GetOutput() []*gorgonia.Node {
+	return net.out
 }
 
 // NewYoloV3Tiny Create new tiny YOLO v3
@@ -316,12 +315,22 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					flatten = append(flatten, selectedAnchors[a][0])
 					flatten = append(flatten, selectedAnchors[a][1])
 				}
+
+				ignoreThreshStr, ok := block["ignore_thresh"]
+				if !ok {
+					fmt.Printf("Warning: no field 'ignore_thresh' for YOLO layer")
+				}
+				ignoreThresh64, err := strconv.ParseFloat(ignoreThreshStr, 32)
+				if !ok {
+					fmt.Printf("Warning: can't cast 'ignore_thresh' to float32 for YOLO layer")
+				}
 				var l layerN = &yoloLayer{
 					masks:          masks,
 					anchors:        selectedAnchors,
 					flattenAhcnors: flatten,
 					inputSize:      inputS[2],
 					classesNum:     classesNumber,
+					ignoreThresh:   float32(ignoreThresh64),
 				}
 				yoloBlock, err := l.ToNode(g, input)
 				if err != nil {
@@ -381,5 +390,5 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 	for i := range layers {
 		fmt.Println(*layers[i])
 	}
-	return &YoloV3Tiny{out: []*gorgonia.Node{networkNodes[16], networkNodes[len(networkNodes)-1]}}, nil
+	return &YoloV3Tiny{classesNum: classesNumber, boxesPerCell: boxesPerCell, out: []*gorgonia.Node{networkNodes[16], networkNodes[len(networkNodes)-1]}}, nil
 }

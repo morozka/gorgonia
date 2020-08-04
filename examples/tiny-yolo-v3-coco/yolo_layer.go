@@ -13,6 +13,7 @@ type yoloLayer struct {
 	flattenAhcnors []int
 	inputSize      int
 	classesNum     int
+	ignoreThresh   float32
 }
 
 func (l *yoloLayer) String() string {
