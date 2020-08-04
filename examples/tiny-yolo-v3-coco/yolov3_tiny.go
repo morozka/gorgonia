@@ -400,6 +400,9 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 	// 	fmt.Println(i, networkNodes[i].Shape())
 	// }
 
+	outInterface := layers[len(layers)-1]
+	outYOLO := *outInterface
+	out := outYOLO.(*yoloLayer)
 	fmt.Println("Loading weights...")
 
 	// for i := range layers {
@@ -442,5 +445,5 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 	// 	}
 	// }
 
-	return nil, nil
+	return &YoloV3Tiny{out: out.outNode}, nil
 }

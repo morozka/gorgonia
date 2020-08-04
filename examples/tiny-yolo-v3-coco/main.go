@@ -54,5 +54,6 @@ func main() {
 	}
 	fmt.Println("Feedforwarded in:", time.Since(st))
 
+	fmt.Println(model.out.Value())
 	tm.Reset()
 }
