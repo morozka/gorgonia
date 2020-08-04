@@ -52,6 +52,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 	lastIdx := 5 // Skip first 5 values (header of weights file)
 	epsilon := float32(0.000001)
 
+	yoloNodes := []*gorgonia.Node{}
 	for i := range blocks {
 		block := blocks[i]
 		filtersIdx := 0
@@ -340,7 +341,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				input = yoloBlock
 
 				layers = append(layers, &l)
-
+				yoloNodes = append(yoloNodes, yoloBlock)
 				filtersIdx = prevFilters
 				break
 			case "maxpool":
@@ -395,6 +396,6 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 	return &YOLOv3{
 		classesNum:   classesNumber,
 		boxesPerCell: boxesPerCell,
-		out:          []*gorgonia.Node{networkNodes[16], networkNodes[len(networkNodes)-1]},
+		out:          yoloNodes,
 	}, nil
 }
