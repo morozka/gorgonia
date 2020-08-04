@@ -16,7 +16,7 @@ import (
 type YoloV3Tiny struct {
 	g *gorgonia.ExprGraph
 
-	out *gorgonia.Node
+	out []*gorgonia.Node
 
 	biases  map[string][]float32
 	gammas  map[string][]float32
@@ -400,54 +400,6 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 		prevFilters = filtersIdx
 		outputFilters = append(outputFilters, filtersIdx)
 	}
-	// for i := range networkNodes {
-	// 	fmt.Println(i, networkNodes[i].Shape())
-	// }
 
-	outInterface := layers[len(layers)-1]
-	outYOLO := *outInterface
-	out := outYOLO.(*yoloLayer)
-	fmt.Println("Loading weights...")
-
-	// for i := range layers {
-	// 	l := *layers[i]
-	// 	layerType := l.Type()
-	// 	// Ignore everything except convolutional layers
-	// 	if layerType == "convolutional" {
-	// 		layer := l.(*convLayer)
-	// 		if layer.batchNormalize > 0 && layer.batchNormNode != nil {
-	// 			biasesNum := layer.batchNormNode.Shape()[0]
-
-	// 			biases := weightsData[ptr : ptr+biasesNum]
-	// 			_ = biases
-	// 			ptr += biasesNum
-
-	// 			weights := weightsData[ptr : ptr+biasesNum]
-	// 			_ = weights
-	// 			ptr += biasesNum
-
-	// 			means := weightsData[ptr : ptr+biasesNum]
-	// 			_ = means
-	// 			ptr += biasesNum
-
-	// 			vars := weightsData[ptr : ptr+biasesNum]
-	// 			_ = vars
-	// 			ptr += biasesNum
-
-	// 			//@todo load weights/biases and etc.
-	// 		} else {
-	// 			biasesNum := layer.convNode.Shape()[0]
-	// 			convBiases := weightsData[ptr : ptr+biasesNum]
-	// 			_ = convBiases
-	// 			ptr += biasesNum
-	// 			//@todo load weights/biases and etc.
-	// 		}
-
-	// 		weightsNumel := layer.convNode.Shape().TotalSize()
-
-	// 		ptr += weightsNumel
-	// 	}
-	// }
-
-	return &YoloV3Tiny{out: out.outNode}, nil
+	return &YoloV3Tiny{out: []*gorgonia.Node{networkNodes[16], networkNodes[len(networkNodes)-1]}}, nil
 }
