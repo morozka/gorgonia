@@ -117,9 +117,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					bias:           bias,
 				}
 
-				// conv node
 				shp := tensor.Shape{filters, prevFilters, kernelSize, kernelSize}
-
 				kernels := []float32{}
 				biases := []float32{}
 				if ll.batchNormalize > 0 {
@@ -141,7 +139,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					kernels = weightsData[lastIdx : lastIdx+nk]
 					lastIdx += nk
 
-					// denormalize weights
+					// Denormalize weights
 					for s := 0; s < shp[0]; s++ {
 						scale := gammas[s] / math32.Sqrt(vars[s]+epsilon)
 						biases[s] = biases[s] - means[s]*scale
