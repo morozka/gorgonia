@@ -59,11 +59,29 @@ func main() {
 	}
 	fmt.Println("Feedforwarded in:", time.Since(st))
 
-	fmt.Println(model.out.Value())
+	//fmt.Println(model.out[0].Value())
 	if cfg == "./data/yolov3-tiny.cfg" {
 		classesCocoArr := strings.Split(classesCoco, " ")
-		t := model.out.Value().(tensor.Tensor)
+		t := model.out[0].Value().(tensor.Tensor)
 		att := t.Data().([]float32)
+
+		for i := 0; i < len(att); i += 85 {
+			if att[i+4] > 0.6 {
+				class := 0
+				var buf float32
+				for j := 5; j < 85; j++ {
+					if att[i+j] > buf {
+						buf = att[i+j]
+						class = (j - 5) % 80
+					}
+				}
+				if buf*att[i+4] > 0.5 {
+					fmt.Println(att[i], att[i+1], att[i+2], att[i+3], att[i+4], classesCocoArr[class], buf)
+				}
+			}
+		}
+		t = model.out[1].Value().(tensor.Tensor)
+		att = t.Data().([]float32)
 
 		for i := 0; i < len(att); i += 85 {
 			if att[i+4] > 0.6 {
@@ -82,7 +100,7 @@ func main() {
 		}
 	}
 	if cfg == "./data/model/yolov2-tiny.cfg" {
-		dets, err := ProcessOutput(model.out)
+		dets, err := ProcessOutput(model.out[0])
 		fmt.Println(err)
 		for i, j := range dets {
 			fmt.Println(i, j)

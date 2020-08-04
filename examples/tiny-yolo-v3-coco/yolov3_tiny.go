@@ -16,7 +16,7 @@ import (
 type YoloV3Tiny struct {
 	g *gorgonia.ExprGraph
 
-	out *gorgonia.Node
+	out []*gorgonia.Node
 
 	biases  map[string][]float32
 	gammas  map[string][]float32
@@ -451,5 +451,5 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 	// 	}
 	// }
 
-	return &YoloV3Tiny{out: networkNodes[len(networkNodes)-1]}, nil
+	return &YoloV3Tiny{out: []*gorgonia.Node{networkNodes[16], networkNodes[len(networkNodes)-1]}}, nil
 }
