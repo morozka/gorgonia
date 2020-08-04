@@ -379,7 +379,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				filtersIdx = prevFilters
 				break
 			default:
-				fmt.Println("Impossible")
+				fmt.Printf("Impossible layer: '%s'\n", layerType)
 				break
 			}
 		}
