@@ -2,24 +2,29 @@ package main
 
 import (
 	"fmt"
-	"gorgonia.org/gorgonia"
-	"gorgonia.org/tensor"
 	"log"
+	"time"
+
+	"gorgonia.org/gorgonia"
+	G "gorgonia.org/gorgonia"
+	"gorgonia.org/tensor"
 )
 
 var (
 	width     = 416
 	height    = 416
 	channels  = 3
-	boxes     = 3
+	boxes     = 5
 	classes   = 80
 	leakyCoef = 0.1
 	weights   = "./data/yolov3-tiny.weights"
 	cfg       = "./data/yolov3-tiny.cfg"
+	//weights = "./data/model/yolov2-tiny.weights"
+	//cfg     = "./data/model/yolov2-tiny.cfg"
 )
 
 func main() {
-	g := gorgonia.NewGraph()
+	g := G.NewGraph()
 
 	input := gorgonia.NewTensor(g, tensor.Float32, 4, gorgonia.WithShape(1, channels, width, height), gorgonia.WithName("input"))
 
@@ -27,51 +32,56 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	fmt.Println("Net Loaded!\nLoading input...")
-	img, err := GetFloat32Image("./data/dog_416x416.jpg")
-	if err != nil {
-		panic(err)
-	}
-	gorgonia.Let(input, tensor.New(tensor.WithShape(1, 3, 416, 416), tensor.WithBacking(img)))
+	_ = model
 
-	fmt.Println("Input loaded!\nForwarding net...")
-	m := gorgonia.NewTapeMachine(g)
-	err = m.RunAll()
+	imgf32, err := GetFloat32Image("data/dog_416x416.jpg")
 	if err != nil {
-		panic(err)
+		fmt.Printf("Can't read []float32 from image due the error: %s\n", err.Error())
+		return
 	}
-	fmt.Println("Net forwarded!")
-	fmt.Println(model.out[0].Shape())
-	t := model.out[0].Value().(tensor.Tensor)
-	att := t.Data().([]float32)
 
-	for i := 0; i < len(att); i += 85 {
-		if att[i+4] > 0.5 {
-			class := 0
-			var buf float32 = 0.0
-			for j := 5; j < 85; j++ {
-				if att[i+j] > buf {
-					buf = att[i+j]
-					class = (j - 5) % 80
+	image := tensor.New(tensor.WithShape(1, channels, height, width), tensor.Of(tensor.Float32), tensor.WithBacking(imgf32))
+	err = gorgonia.Let(input, image)
+	if err != nil {
+		fmt.Printf("Can't let input = []float32 due the error: %s\n", err.Error())
+		return
+	}
+
+	tm := G.NewTapeMachine(g)
+	defer tm.Close()
+	st := time.Now()
+	if err := tm.RunAll(); err != nil {
+		fmt.Printf("Can't run tape machine due the error: %s\n", err.Error())
+		return
+	}
+	fmt.Println("Feedforwarded in:", time.Since(st))
+
+	fmt.Println(model.out.Value())
+	if cfg == "./data/yolov3-tiny.cfg" {
+		t := model.out.Value().(tensor.Tensor)
+		att := t.Data().([]float32)
+
+		for i := 0; i < len(att); i += 85 {
+			if att[i+4] > 0.5 {
+				class := 0
+				var buf float32
+				for j := 5; j < 85; j++ {
+					if att[i+j] > buf {
+						buf = att[i+j]
+						class = (j - 5) % 80
+					}
 				}
+				fmt.Println(att[i], att[i+1], att[i+2], att[i+3], att[i+4], class, buf)
 			}
-			fmt.Println(att[i], att[i+1], att[i+2], att[i+3], att[i+4], class, buf)
 		}
 	}
-	t = model.out[1].Value().(tensor.Tensor)
-	att = t.Data().([]float32)
-	fmt.Println(len(att))
-	for i := 0; i < len(att); i += 85 {
-		if att[i+4] > 0.5 {
-			class := 0
-			var buf float32 = 0.0
-			for j := 5; j < 85; j++ {
-				if att[i+j] > buf {
-					buf = att[i+j]
-					class = (j - 5) % 80
-				}
-			}
-			fmt.Println(att[i], att[i+1], att[i+2], att[i+3], att[i+4], class, buf)
+	if cfg == "./data/model/yolov2-tiny.cfg" {
+		dets, err := ProcessOutput(model.out)
+		fmt.Println(err)
+		for i, j := range dets {
+			fmt.Println(i, j)
 		}
 	}
+
+	tm.Reset()
 }
