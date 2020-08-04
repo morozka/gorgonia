@@ -13,7 +13,6 @@ type yoloLayer struct {
 	flattenAhcnors []int
 	inputSize      int
 	classesNum     int
-	outNode        *gorgonia.Node
 }
 
 func (l *yoloLayer) String() string {
@@ -40,6 +39,5 @@ func (l *yoloLayer) ToNode(g *gorgonia.ExprGraph, input ...*gorgonia.Node) (*gor
 	if err != nil {
 		return nil, errors.Wrap(err, "Can't prepare YOLOv3 operation")
 	}
-	l.outNode = yoloNode
 	return yoloNode, nil
 }
