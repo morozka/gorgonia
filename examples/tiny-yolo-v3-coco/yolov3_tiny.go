@@ -328,11 +328,15 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				for m := range masks {
 					selectedAnchors = append(selectedAnchors, anchorsPairs[masks[m]])
 				}
-
+				flatten := []int{}
+				for a := range selectedAnchors {
+					flatten = append(flatten, selectedAnchors[a][0])
+					flatten = append(flatten, selectedAnchors[a][1])
+				}
 				var l layerN = &yoloLayer{
 					masks:          masks,
 					anchors:        selectedAnchors,
-					flattenAhcnors: anchors,
+					flattenAhcnors: flatten,
 					inputSize:      inputS[2],
 					classesNum:     classesNumber,
 				}
