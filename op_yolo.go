@@ -251,6 +251,50 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 		panic("Unsupportable type for Yolo")
 	}
 }
+
+func (op *yoloOp) DiffWRT(inputs int) []bool { return []bool{true} }
+
+func (op *yoloOp) DoDiff(ctx ExecutionContext, inputs Nodes, output *Node) (err error) {
+	if err = checkArity(op, len(inputs)); err != nil {
+		return
+	}
+	input := inputs[0]
+	inputDV, outDV := getDV(input, output)
+	inGrad := inputDV.d
+	outValue := outDV.Value
+	switch input.Dtype() {
+	case tensor.Float32:
+		inGradData := inGrad.Data().([]float32)
+		outValueData := outValue.Data().([]float32)
+		for i := range inGradData {
+			inGradData[i] = 0.0
+		}
+		for i := range outValueData {
+			for j := 0; j < 4; j++ {
+				inGradData[i+j] = outValueData[i+j]
+			}
+			for j := 4; j < 5+op.numClasses; j++ {
+				inGradData[i+j] = outValueData[i+j] * (1.0 - outValueData[i+j])
+			}
+		}
+	case tensor.Float64:
+		inGradData := inGrad.Data().([]float64)
+		outValueData := outValue.Data().([]float64)
+		for i := range inGradData {
+			inGradData[i] = 0.0
+		}
+		for i := range outValueData {
+			for j := 0; j < 4; j++ {
+				inGradData[i+j] = outValueData[i+j]
+			}
+			for j := 4; j < 5+op.numClasses; j++ {
+				inGradData[i+j] = outValueData[i+j] * (1.0 - outValueData[i+j])
+			}
+		}
+	}
+	return
+}
+
 func (op *yoloOp) yoloDoer(in tensor.Tensor, batch, stride, grid, bboxAttrs, numAnchors int, currentAnchors []float64) (retVal tensor.Tensor, err error) {
 	in.Reshape(batch, bboxAttrs*numAnchors, grid*grid)
 
