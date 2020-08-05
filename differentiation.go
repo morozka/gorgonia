@@ -1,6 +1,7 @@
 package gorgonia
 
 import (
+	"fmt"
 	"github.com/pkg/errors"
 	"gonum.org/v1/gonum/graph"
 )
@@ -39,6 +40,9 @@ func forwardDiffAnalysis(outputs, sortedNodes Nodes) (retVal NodeSet, err error)
 		if diffSet.Contains(n) && !n.isInput() {
 			diffs := n.diffWRT()
 			for j, child := range n.children {
+				if j >= len(diffs) {
+					fmt.Println("INCORRECT DIFFWRT", n, diffs, len(n.children))
+				}
 				d := diffs[j]
 				if d {
 					symdiffLogf("Adding %x to  differentiable set", child.ID())

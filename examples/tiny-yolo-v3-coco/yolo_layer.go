@@ -5,6 +5,7 @@ import (
 
 	"github.com/pkg/errors"
 	"gorgonia.org/gorgonia"
+	_ "gorgonia.org/tensor"
 )
 
 type yoloLayer struct {
@@ -40,9 +41,15 @@ func (l *yoloLayer) ToNode(g *gorgonia.ExprGraph, input ...*gorgonia.Node) (*gor
 	for i := range fanchors64 {
 		fanchors64[i] = float64(l.flattenAhcnors[i])
 	}
-	//TEST ONLY
+	//TEST ONLY should be removed with a correct parser
+	fmt.Println("DELETE ME I AM A TEST IN YOLO_LAYER.GO", inputN.Shape())
 	fanchors64 = append(fanchors64, fanchors64...)
-	yoloNode, err := gorgonia.YoloDetector(inputN, fanchors64, l.masks, l.inputSize, l.classesNum, float64(l.ignoreThresh))
+	target, err := prepareTrain32("./data", inputN.Shape()[2])
+	fmt.Println(err)
+
+	yoloNode, err := gorgonia.YoloDetector(inputN, fanchors64, l.masks, l.inputSize, l.classesNum, float64(0.5), target)
+	//END TEST
+	//yoloNode, err := gorgonia.YoloDetector(inputN, fanchors64, l.masks, l.inputSize, l.classesNum, float64(l.ignoreThresh))
 	if err != nil {
 		return nil, errors.Wrap(err, "Can't prepare YOLOv3 operation")
 	}

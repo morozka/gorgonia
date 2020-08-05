@@ -1,14 +1,17 @@
 package main
 
 import (
+	"errors"
 	"fmt"
-	"log"
-	"strings"
-	"time"
-
 	"gorgonia.org/gorgonia"
 	G "gorgonia.org/gorgonia"
 	"gorgonia.org/tensor"
+	"io/ioutil"
+	"log"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
 )
 
 var (
@@ -46,19 +49,33 @@ func main() {
 		fmt.Printf("Can't let input = []float32 due the error: %s\n", err.Error())
 		return
 	}
-
-	tm := G.NewTapeMachine(g)
+	sum16th := gorgonia.Must(gorgonia.Sum(model.out[0], 0, 1, 2))
+	cost := sum16th
+	//sumlast := gorgonia.Must(gorgonia.Sum(model.out[1], 0, 1, 2))
+	//cost := gorgonia.Must(gorgonia.Add(sum16th, sumlast))
+	_, err = gorgonia.Grad(cost, model.learningNodes...)
+	prog, locMap, _ := gorgonia.Compile(g)
+	tm := G.NewTapeMachine(g, gorgonia.WithPrecompiled(prog, locMap), gorgonia.BindDualValues(model.learningNodes...))
+	solver := gorgonia.NewRMSPropSolver()
 	defer tm.Close()
 	st := time.Now()
-	if err := tm.RunAll(); err != nil {
-		fmt.Printf("Can't run tape machine due the error: %s\n", err.Error())
-		return
+	for i := 0; i < 10; i++ {
+		if err := tm.RunAll(); err != nil {
+			fmt.Printf("Can't run tape machine due the error: %s\n", err.Error())
+			return
+		}
+		err = solver.Step(gorgonia.NodesToValueGrads(model.learningNodes))
+		if err != nil {
+			fmt.Println(err)
+		}
+		tm.Reset()
 	}
-	fmt.Println("Feedforwarded in:", time.Since(st))
 
+	fmt.Println("Feedforwarded in:", time.Since(st))
 	if cfg == "./data/yolov3-tiny.cfg" {
 		classesCocoArr := strings.Split(classesCoco, " ")
 		t := model.out[0].Value().(tensor.Tensor)
+		fmt.Println(t)
 		att := t.Data().([]float32)
 
 		fmt.Println("16th layer:")
@@ -100,4 +117,52 @@ func main() {
 
 	// fmt.Println(model.out.Value())
 	tm.Reset()
+}
+func prepareTrain32(pathToDir string, gridSize int) (*tensor.Dense, error) {
+	files, err := ioutil.ReadDir(pathToDir)
+	if err != nil {
+		return &tensor.Dense{}, err
+	}
+	farr := [][]float32{}
+	maxLen := gridSize * gridSize
+	numTrainFiles := 0
+	for _, file := range files {
+		cfarr := []float32{}
+		if file.IsDir() || filepath.Ext(file.Name()) != ".txt" {
+			continue
+		}
+		numTrainFiles++
+		f, err := ioutil.ReadFile(pathToDir + "/" + file.Name())
+		if err != nil {
+			return &tensor.Dense{}, err
+		}
+		str := string(f)
+		fmt.Println(str)
+		str = strings.ReplaceAll(str, "\n", " ")
+		arr := strings.Split(str, " ")
+		for i := 0; i < len(arr); i++ {
+			if arr[i] == "" {
+				continue
+			}
+			if s, err := strconv.ParseFloat(arr[i], 32); err == nil {
+				if float32(s) < 0 {
+					return &tensor.Dense{}, errors.New("incorrect training data")
+				}
+				cfarr = append(cfarr, float32(s))
+			} else {
+				return &tensor.Dense{}, err
+			}
+		}
+		farr = append(farr, cfarr)
+	}
+	backArr := []float32{}
+	for i := 0; i < len(farr); i++ {
+		backArr = append(backArr, float32(len(farr[i])))
+		backArr = append(backArr, farr[i]...)
+		if len(farr[i]) < maxLen {
+			zeroes := make([]float32, maxLen-len(farr[i])-1)
+			backArr = append(backArr, zeroes...)
+		}
+	}
+	return tensor.New(tensor.WithShape(numTrainFiles, 1, gridSize, gridSize), tensor.Of(tensor.Float32), tensor.WithBacking(backArr)), nil
 }
