@@ -42,7 +42,6 @@ func (l *yoloLayer) ToNode(g *gorgonia.ExprGraph, input ...*gorgonia.Node) (*gor
 	}
 	//TEST ONLY
 	fanchors64 = append(fanchors64, fanchors64...)
-	fmt.Println("WTFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", l.masks, len(fanchors64))
 	yoloNode, err := gorgonia.YoloDetector(inputN, fanchors64, l.masks, l.inputSize, l.classesNum, float64(l.ignoreThresh))
 	if err != nil {
 		return nil, errors.Wrap(err, "Can't prepare YOLOv3 operation")
