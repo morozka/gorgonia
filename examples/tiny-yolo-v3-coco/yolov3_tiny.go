@@ -176,7 +176,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				input = convBlock
 
 				layers = append(layers, &l)
-				learningNodes = append(learningNodes, ll.convNode, ll.biasNode)
+				learningNodes = append(learningNodes, ll.convNode) ///, ll.biasNode)
 				filtersIdx = filters
 				break
 			case "upsample":

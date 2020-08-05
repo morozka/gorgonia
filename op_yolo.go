@@ -20,6 +20,7 @@ type yoloOp struct {
 	numClasses  int
 	train       bool
 	target      *tensor.Dense
+	gridSize    int
 }
 
 func newYoloOp(anchors []float64, mask []int, imheight, numclasses int, ignoreTresh float64, train bool) *yoloOp {
@@ -37,12 +38,9 @@ func newYoloOp(anchors []float64, mask []int, imheight, numclasses int, ignoreTr
 //YoloDetector yolov3 output layer
 func YoloDetector(x *Node, anchors []float64, mask []int, imheight, numclasses int, ignoreTresh float64, target ...*tensor.Dense) (*Node, error) {
 	if len(target) > 0 {
-		//sx, _ := Slice(x, S(0), nil, nil, nil)
-		//st, _ := Slice(target[0], S(0), nil, nil, nil)
-		//rx := Must(Concat(0, sx, st))
-		//rx = Must(Reshape(rx, []int{1, rx.Shape()[0], rx.Shape()[1], rx.Shape()[2]}))
 		op := newYoloOp(anchors, mask, imheight, numclasses, ignoreTresh, true)
 		op.target = target[0]
+		op.gridSize = x.Shape()[2]
 		retVal, err := ApplyOp(op, x)
 		return retVal, err
 	}
@@ -70,7 +68,7 @@ func (op *yoloOp) String() string {
 func (op *yoloOp) InferShape(inputs ...DimSizer) (tensor.Shape, error) {
 	s := inputs[0].(tensor.Shape).Clone()
 	if op.train {
-		return []int{s[0], s[2] * s[3] * len(op.mask), (s[1] - 1) / len(op.mask)}, nil
+		return []int{s[0], s[2] * s[3] * len(op.mask), (s[1]) / len(op.mask)}, nil
 	}
 	return []int{s[0], s[2] * s[3] * len(op.mask), s[1] / len(op.mask)}, nil
 }
@@ -188,9 +186,7 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	var targets []float32
 	switch in.Dtype() {
 	case Float32:
-		fmt.Println("here 1")
 		lt := int(numTargets.(float32))
-		fmt.Println("here 2")
 		targets = make([]float32, lt, lt)
 		for i := 1; i <= lt; i++ {
 			buf, _ := target.At(0, target.Shape()[1]-1, 0+i/grid, 0+i%grid)
@@ -261,6 +257,7 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 func (op *yoloOp) DiffWRT(inputs int) []bool { return []bool{true} }
 
 func (op *yoloOp) DoDiff(ctx ExecutionContext, inputs Nodes, output *Node) (err error) {
+
 	if err = checkArity(op, len(inputs)); err != nil {
 		return
 	}
@@ -275,7 +272,7 @@ func (op *yoloOp) DoDiff(ctx ExecutionContext, inputs Nodes, output *Node) (err 
 		for i := range inGradData {
 			inGradData[i] = 0.0
 		}
-		for i := range outValueData {
+		for i := 0; i < len(outValueData); i = i + 5 + op.numClasses {
 			for j := 0; j < 4; j++ {
 				inGradData[i+j] = outValueData[i+j]
 			}
@@ -289,7 +286,7 @@ func (op *yoloOp) DoDiff(ctx ExecutionContext, inputs Nodes, output *Node) (err 
 		for i := range inGradData {
 			inGradData[i] = 0.0
 		}
-		for i := range outValueData {
+		for i := 0; i < len(outValueData); i = i + 5 + op.numClasses {
 			for j := 0; j < 4; j++ {
 				inGradData[i+j] = outValueData[i+j]
 			}
@@ -315,42 +312,10 @@ func (op *yoloOp) SymDiff(inputs Nodes, output, grad *Node) (retVal Nodes, err e
 	if ret, err = ApplyOp(diff, in, output); err != nil {
 		return nil, err
 	}
+
+	fmt.Println("YoloEnded!", ret.Shape())
 	return Nodes{ret}, nil
-	/*
-		inGrad := tensor.New(tensor.Of(in.Dtype()), tensor.WithShape(in.Shape().Clone()...), tensor.WithEngine(in.Value().(tensor.Tensor).Engine()))
-		switch in.Dtype() {
-		case tensor.Float32:
-			inGradData := inGrad.Data().([]float32)
-			outValueData := output.Value().Data().([]float32)
-			for i := range inGradData {
-				inGradData[i] = 0.0
-			}
-			for i := range outValueData {
-				for j := 0; j < 4; j++ {
-					inGradData[i+j] = outValueData[i+j]
-				}
-				for j := 4; j < 5+op.numClasses; j++ {
-					inGradData[i+j] = outValueData[i+j] * (1.0 - outValueData[i+j])
-				}
-			}
-			return []*Node{NewTensor(in.g, in.Dtype(), in.Dims(), WithValue(inGradData))}, nil
-		case tensor.Float64:
-			inGradData := inGrad.Data().([]float64)
-			outValueData := output.Value().Data().([]float64)
-			for i := range inGradData {
-				inGradData[i] = 0.0
-			}
-			for i := range outValueData {
-				for j := 0; j < 4; j++ {
-					inGradData[i+j] = outValueData[i+j]
-				}
-				for j := 4; j < 5+op.numClasses; j++ {
-					inGradData[i+j] = outValueData[i+j] * (1.0 - outValueData[i+j])
-				}
-			}
-			return []*Node{NewTensor(in.g, in.Dtype(), in.Dims(), WithValue(inGradData))}, nil
-		}
-		return nil, nil*/
+
 }
 func (op *yoloOp) yoloDoer(in tensor.Tensor, batch, stride, grid, bboxAttrs, numAnchors int, currentAnchors []float64) (retVal tensor.Tensor, err error) {
 	in.Reshape(batch, bboxAttrs*numAnchors, grid*grid)
@@ -652,7 +617,7 @@ func (op *yoloOpDiff) Do(inputs ...Value) (Value, error) {
 		for i := range inGradData {
 			inGradData[i] = 0.0
 		}
-		for i := range outValueData {
+		for i := 0; i < len(outValueData); i = i + 5 + op.numClasses {
 			for j := 0; j < 4; j++ {
 				inGradData[i+j] = outValueData[i+j]
 			}
@@ -666,7 +631,7 @@ func (op *yoloOpDiff) Do(inputs ...Value) (Value, error) {
 		for i := range inGradData {
 			inGradData[i] = 0.0
 		}
-		for i := range outValueData {
+		for i := 0; i < len(outValueData); i = i + 5 + op.numClasses {
 			for j := 0; j < 4; j++ {
 				inGradData[i+j] = outValueData[i+j]
 			}
@@ -675,5 +640,7 @@ func (op *yoloOpDiff) Do(inputs ...Value) (Value, error) {
 			}
 		}
 	}
+	inGrad.Reshape(1, len(op.mask)*(5+op.numClasses), op.gridSize, op.gridSize)
+	fmt.Println("YoloEnded", inGrad.Shape())
 	return inGrad, nil
 }

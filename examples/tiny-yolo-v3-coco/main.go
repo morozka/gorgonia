@@ -54,12 +54,15 @@ func main() {
 	//sumlast := gorgonia.Must(gorgonia.Sum(model.out[1], 0, 1, 2))
 	//cost := gorgonia.Must(gorgonia.Add(sum16th, sumlast))
 	_, err = gorgonia.Grad(cost, model.learningNodes...)
+	if err != nil {
+		panic(err)
+	}
 	prog, locMap, _ := gorgonia.Compile(g)
 	tm := G.NewTapeMachine(g, gorgonia.WithPrecompiled(prog, locMap), gorgonia.BindDualValues(model.learningNodes...))
 	solver := gorgonia.NewRMSPropSolver()
 	defer tm.Close()
 	st := time.Now()
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 2; i++ {
 		if err := tm.RunAll(); err != nil {
 			fmt.Printf("Can't run tape machine due the error: %s\n", err.Error())
 			return
@@ -68,10 +71,13 @@ func main() {
 		if err != nil {
 			fmt.Println(err)
 		}
+		t := model.out[0].Value().(tensor.Tensor)
+		fmt.Println(t)
 		tm.Reset()
 	}
 
 	fmt.Println("Feedforwarded in:", time.Since(st))
+	return
 	if cfg == "./data/yolov3-tiny.cfg" {
 		classesCocoArr := strings.Split(classesCoco, " ")
 		t := model.out[0].Value().(tensor.Tensor)
