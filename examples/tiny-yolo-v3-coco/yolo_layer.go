@@ -36,7 +36,11 @@ func (l *yoloLayer) ToNode(g *gorgonia.ExprGraph, input ...*gorgonia.Node) (*gor
 	if len(inputN.Shape()) == 0 {
 		return nil, fmt.Errorf("Input shape for YOLO layer is nil")
 	}
-	yoloNode, err := gorgonia.YOLOv3(inputN, l.flattenAhcnors, l.inputSize, l.classesNum)
+	fanchors64 := make([]float32, len(l.flattenAhcnors))
+	for i := range fanchors64 {
+		fanchors64[i] = float32(l.flattenAhcnors[i])
+	}
+	yoloNode, err := gorgonia.YOLOv3(inputN, fanchors64, []int{0, 1, 2}, l.inputSize, l.classesNum, l.ignoreThresh)
 	if err != nil {
 		return nil, errors.Wrap(err, "Can't prepare YOLOv3 operation")
 	}

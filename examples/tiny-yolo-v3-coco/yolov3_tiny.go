@@ -14,18 +14,18 @@ import (
 
 // YOLOv3 YOLOv3 architecture
 type YOLOv3 struct {
-	g                        *gorgonia.ExprGraph
-	classesNum, boxesPerCell int
-	out                      []*gorgonia.Node
+	g                                             *gorgonia.ExprGraph
+	classesNum, cellsInRow, boxesPerCell, netSize int
+	out                                           *gorgonia.Node
 }
 
 // GetOutput Get out YOLO layers (can be multiple of them)
-func (net *YOLOv3) GetOutput() []*gorgonia.Node {
+func (net *YOLOv3) GetOutput() *gorgonia.Node {
 	return net.out
 }
 
 // NewYoloV3Tiny Create new tiny YOLO v3
-func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, boxesPerCell int, leakyCoef float64, cfgFile, weightsFile string) (*YOLOv3, error) {
+func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, cellsInRow, boxesPerCell int, leakyCoef float64, cfgFile, weightsFile string) (*YOLOv3, error) {
 	inputS := input.Shape()
 	if len(inputS) < 4 {
 		return nil, fmt.Errorf("Input for YOLOv3 should contain infromation about 4 dimensions")
@@ -34,6 +34,13 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 	buildingBlocks, err := ParseConfiguration(cfgFile)
 	if err != nil {
 		return nil, errors.Wrap(err, "Can't read darknet configuration")
+	}
+
+	netParams := buildingBlocks[0]
+	netWidthStr := netParams["width"]
+	netWidth, err := strconv.Atoi(netWidthStr)
+	if err != nil {
+		return nil, errors.Wrap(err, fmt.Sprintf("Network's width must be integer, got value: '%s'", netWidthStr))
 	}
 
 	weightsData, err := ParseWeights(weightsFile)
@@ -393,9 +400,16 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 		fmt.Println(*layers[i])
 	}
 
+	concatYoloLayers, err := gorgonia.Concat(1, yoloNodes...)
+	if err != nil {
+		return nil, errors.Wrap(err, "Can't concat YOLO layers")
+	}
+
 	return &YOLOv3{
 		classesNum:   classesNumber,
+		cellsInRow:   cellsInRow,
 		boxesPerCell: boxesPerCell,
-		out:          yoloNodes,
+		netSize:      netWidth,
+		out:          concatYoloLayers,
 	}, nil
 }

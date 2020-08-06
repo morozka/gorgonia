@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"gorgonia.org/gorgonia"
@@ -15,8 +14,9 @@ var (
 	width       = 416
 	height      = 416
 	channels    = 3
-	boxes       = 5
+	boxes       = 3
 	classes     = 80
+	cellsInRow  = 13
 	leakyCoef   = 0.1
 	weights     = "./data/yolov3-tiny.weights"
 	cfg         = "./data/yolov3-tiny.cfg"
@@ -28,11 +28,10 @@ func main() {
 
 	input := gorgonia.NewTensor(g, tensor.Float32, 4, gorgonia.WithShape(1, channels, width, height), gorgonia.WithName("input"))
 
-	model, err := NewYoloV3Tiny(g, input, classes, boxes, leakyCoef, cfg, weights)
+	model, err := NewYoloV3Tiny(g, input, classes, cellsInRow, boxes, leakyCoef, cfg, weights)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	_ = model
 
 	imgf32, err := GetFloat32Image("data/dog_416x416.jpg")
 	if err != nil {
@@ -56,47 +55,60 @@ func main() {
 	}
 	fmt.Println("Feedforwarded in:", time.Since(st))
 
-	if cfg == "./data/yolov3-tiny.cfg" {
-		classesCocoArr := strings.Split(classesCoco, " ")
-		t := model.out[0].Value().(tensor.Tensor)
-		att := t.Data().([]float32)
-
-		fmt.Println("16th layer:")
-		for i := 0; i < len(att); i += 85 {
-			if att[i+4] > 0.6 {
-				class := 0
-				var buf float32
-				for j := 5; j < 85; j++ {
-					if att[i+j] > buf {
-						buf = att[i+j]
-						class = (j - 5) % 80
-					}
-				}
-				if buf*att[i+4] > 0.6 {
-					fmt.Println(att[i], att[i+1], att[i+2], att[i+3], att[i+4], classesCocoArr[class], buf)
-				}
-			}
-		}
-		t = model.out[1].Value().(tensor.Tensor)
-		att = t.Data().([]float32)
-
-		fmt.Println("last layer:")
-		for i := 0; i < len(att); i += 85 {
-			if att[i+4] > 0.6 {
-				class := 0
-				var buf float32
-				for j := 5; j < 85; j++ {
-					if att[i+j] > buf {
-						buf = att[i+j]
-						class = (j - 5) % 80
-					}
-				}
-				if buf*att[i+4] > 0.6 {
-					fmt.Println(att[i], att[i+1], att[i+2], att[i+3], att[i+4], classesCocoArr[class], buf)
-				}
-			}
-		}
+	st = time.Now()
+	dets, err := model.ProcessOutput()
+	if err != nil {
+		fmt.Printf("Can't do postprocessing due error: %s", err.Error())
+		return
 	}
+	fmt.Println("Postprocessed in:", time.Since(st))
+
+	fmt.Println("Detections:")
+	for i := range dets {
+		fmt.Println(dets[i])
+	}
+
+	// if cfg == "./data/yolov3-tiny.cfg" {
+	// 	classesCocoArr := strings.Split(classesCoco, " ")
+	// 	t := model.out[0].Value().(tensor.Tensor)
+	// 	att := t.Data().([]float32)
+
+	// 	fmt.Println("16th layer:")
+	// 	for i := 0; i < len(att); i += 85 {
+	// 		if att[i+4] > 0.6 {
+	// 			class := 0
+	// 			var buf float32
+	// 			for j := 5; j < 85; j++ {
+	// 				if att[i+j] > buf {
+	// 					buf = att[i+j]
+	// 					class = (j - 5) % 80
+	// 				}
+	// 			}
+	// 			if buf*att[i+4] > 0.6 {
+	// 				fmt.Println(att[i], att[i+1], att[i+2], att[i+3], att[i+4], classesCocoArr[class], buf)
+	// 			}
+	// 		}
+	// 	}
+	// 	t = model.out[1].Value().(tensor.Tensor)
+	// 	att = t.Data().([]float32)
+
+	// 	fmt.Println("last layer:")
+	// 	for i := 0; i < len(att); i += 85 {
+	// 		if att[i+4] > 0.6 {
+	// 			class := 0
+	// 			var buf float32
+	// 			for j := 5; j < 85; j++ {
+	// 				if att[i+j] > buf {
+	// 					buf = att[i+j]
+	// 					class = (j - 5) % 80
+	// 				}
+	// 			}
+	// 			if buf*att[i+4] > 0.6 {
+	// 				fmt.Println(att[i], att[i+1], att[i+2], att[i+3], att[i+4], classesCocoArr[class], buf)
+	// 			}
+	// 		}
+	// 	}
+	// }
 
 	// fmt.Println(model.out.Value())
 	tm.Reset()
