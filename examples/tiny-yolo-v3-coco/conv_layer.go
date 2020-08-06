@@ -20,13 +20,8 @@ type convLayer struct {
 
 	layerIndex int
 
-	convNode       *gorgonia.Node
-	biasNode       *gorgonia.Node
-	batchNormNode  *gorgonia.Node
-	activationNode *gorgonia.Node
-
-	batchOut, gamma, beta *gorgonia.Node
-	batchNormOperation    *gorgonia.BatchNormOp
+	convNode *gorgonia.Node
+	biasNode *gorgonia.Node
 }
 
 func (l *convLayer) String() string {
@@ -47,18 +42,6 @@ func (l *convLayer) ToNode(g *gorgonia.ExprGraph, input ...*gorgonia.Node) (*gor
 		return &gorgonia.Node{}, errors.Wrap(err, "Can't prepare convolution operation")
 	}
 
-	if l.batchNormalize > 0 {
-		// scale := gorgonia.NewTensor(g, gorgonia.Float32, 4, gorgonia.WithShape(convOut.Shape()...), gorgonia.WithName(fmt.Sprintf("scale_%d", l.layerIndex)))
-		// bias := gorgonia.NewTensor(g, gorgonia.Float32, 4, gorgonia.WithShape(convOut.Shape()...), gorgonia.WithName(fmt.Sprintf("bias_%d", l.layerIndex)))
-		// l.batchOut, l.gamma, l.beta, l.batchNormOperation, err = gorgonia.BatchNorm(convOut, scale, bias, 0.1, 10e-5)
-		// if err != nil {
-		// 	return &gorgonia.Node{}, errors.Wrap(err, "Can't prepare batch normalization operation")
-		// }
-		l.batchOut = convOut
-	} else {
-		l.batchOut = convOut
-	}
-
 	shp := convOut.Shape()
 	iters := shp.TotalSize() / len(l.biases)
 	newArr := []float32{}
@@ -68,9 +51,9 @@ func (l *convLayer) ToNode(g *gorgonia.ExprGraph, input ...*gorgonia.Node) (*gor
 		}
 	}
 	biasTensor := tensor.New(tensor.WithBacking(newArr), tensor.WithShape(shp...))
-	biasNode := gorgonia.NewTensor(g, tensor.Float32, 4, gorgonia.WithShape(shp...), gorgonia.WithName(fmt.Sprintf("bias_%d", l.layerIndex)), gorgonia.WithValue(biasTensor))
+	l.biasNode = gorgonia.NewTensor(g, tensor.Float32, 4, gorgonia.WithShape(shp...), gorgonia.WithName(fmt.Sprintf("bias_%d", l.layerIndex)), gorgonia.WithValue(biasTensor))
 
-	biasOut, err := gorgonia.Add(convOut, biasNode)
+	biasOut, err := gorgonia.Add(convOut, l.biasNode)
 	if err != nil {
 		return &gorgonia.Node{}, errors.Wrap(err, "Can't prepare bias add operation")
 	}

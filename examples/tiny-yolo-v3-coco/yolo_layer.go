@@ -13,7 +13,7 @@ type yoloLayer struct {
 	flattenAhcnors []int
 	inputSize      int
 	classesNum     int
-	outNode        *gorgonia.Node
+	ignoreThresh   float32
 }
 
 func (l *yoloLayer) String() string {
@@ -32,17 +32,17 @@ func (l *yoloLayer) Type() string {
 }
 
 func (l *yoloLayer) ToNode(g *gorgonia.ExprGraph, input ...*gorgonia.Node) (*gorgonia.Node, error) {
-
 	inputN := input[0]
 	if len(inputN.Shape()) == 0 {
 		return nil, fmt.Errorf("Input shape for YOLO layer is nil")
 	}
-	//preparedTensor := gorgonia.NewTensor(g, tensor.Float32, 4, gorgonia.WithShape(inputN.Shape()...), gorgonia.WithName("yolo"), gorgonia.WithInit(gorgonia.Zeroes()))
-
-	yoloNode, err := gorgonia.YOLOv3(inputN, l.flattenAhcnors, []int{0, 1, 2}, l.inputSize, l.classesNum, 0.5)
+	fanchors64 := make([]float32, len(l.flattenAhcnors))
+	for i := range fanchors64 {
+		fanchors64[i] = float32(l.flattenAhcnors[i])
+	}
+	yoloNode, err := gorgonia.YOLOv3(inputN, l.flattenAhcnors, []int{0, 1, 2}, l.inputSize, l.classesNum, l.ignoreThresh)
 	if err != nil {
 		return nil, errors.Wrap(err, "Can't prepare YOLOv3 operation")
 	}
-	l.outNode = yoloNode
 	return yoloNode, nil
 }

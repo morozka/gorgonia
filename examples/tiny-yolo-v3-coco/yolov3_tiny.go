@@ -12,21 +12,20 @@ import (
 	"gorgonia.org/tensor"
 )
 
-// YoloV3Tiny YoloV3 tiny architecture
-type YoloV3Tiny struct {
-	g *gorgonia.ExprGraph
+// YOLOv3 YOLOv3 architecture
+type YOLOv3 struct {
+	g                                             *gorgonia.ExprGraph
+	classesNum, cellsInRow, boxesPerCell, netSize int
+	out                                           []*gorgonia.Node
+}
 
-	out []*gorgonia.Node
-
-	biases  map[string][]float32
-	gammas  map[string][]float32
-	means   map[string][]float32
-	vars    map[string][]float32
-	kernels map[string][]float32
+// GetOutput Get out YOLO layers (can be multiple of them)
+func (net *YOLOv3) GetOutput() []*gorgonia.Node {
+	return net.out
 }
 
 // NewYoloV3Tiny Create new tiny YOLO v3
-func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, boxesPerCell int, leakyCoef float64, cfgFile, weightsFile string) (*YoloV3Tiny, error) {
+func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, cellsInRow, boxesPerCell int, leakyCoef float64, cfgFile, weightsFile string) (*YOLOv3, error) {
 	inputS := input.Shape()
 	if len(inputS) < 4 {
 		return nil, fmt.Errorf("Input for YOLOv3 should contain infromation about 4 dimensions")
@@ -35,6 +34,13 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 	buildingBlocks, err := ParseConfiguration(cfgFile)
 	if err != nil {
 		return nil, errors.Wrap(err, "Can't read darknet configuration")
+	}
+
+	netParams := buildingBlocks[0]
+	netWidthStr := netParams["width"]
+	netWidth, err := strconv.Atoi(netWidthStr)
+	if err != nil {
+		return nil, errors.Wrap(err, fmt.Sprintf("Network's width must be integer, got value: '%s'", netWidthStr))
 	}
 
 	weightsData, err := ParseWeights(weightsFile)
@@ -50,11 +56,10 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 	networkNodes := []*gorgonia.Node{}
 
 	blocks := buildingBlocks[1:]
-	lastIdx := 5 // skip first 5 values
+	lastIdx := 5 // Skip first 5 values (header of weights file)
 	epsilon := float32(0.000001)
-	// weightsData = weightsData[lastIdx:]
-	// ptr := 0
 
+	yoloNodes := []*gorgonia.Node{}
 	for i := range blocks {
 		block := blocks[i]
 		filtersIdx := 0
@@ -119,9 +124,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					bias:           bias,
 				}
 
-				// conv node
 				shp := tensor.Shape{filters, prevFilters, kernelSize, kernelSize}
-
 				kernels := []float32{}
 				biases := []float32{}
 				if ll.batchNormalize > 0 {
@@ -143,7 +146,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					kernels = weightsData[lastIdx : lastIdx+nk]
 					lastIdx += nk
 
-					// denormalize weights
+					// Denormalize weights
 					for s := 0; s < shp[0]; s++ {
 						scale := gammas[s] / math32.Sqrt(vars[s]+epsilon)
 						biases[s] = biases[s] - means[s]*scale
@@ -169,15 +172,6 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				ll.biases = biases
 				ll.layerIndex = i
 
-				if batchNormalize != 0 {
-					// batchNormNode := gorgonia.NewTensor(g, tensor.Float32, 1, gorgonia.WithShape(filters), gorgonia.WithName(fmt.Sprintf("batch_norm_%d", i)))
-					// ll.batchNormNode = batchNormNode
-				}
-				if activation == "leaky" {
-					// leakyNode := gorgonia.NewTensor(g, tensor.Float32, 4, gorgonia.WithShape(convNode.Shape()...), gorgonia.WithName(fmt.Sprintf("leaky_%d", i)))
-					// ll.activationNode = leakyNode
-				}
-
 				var l layerN = ll
 				convBlock, err := l.ToNode(g, input)
 				if err != nil {
@@ -187,7 +181,6 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				input = convBlock
 
 				layers = append(layers, &l)
-				fmt.Println(l)
 
 				filtersIdx = filters
 				break
@@ -212,11 +205,9 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				input = upsampleBlock
 
 				layers = append(layers, &l)
-				fmt.Println(l)
 
 				filtersIdx = prevFilters
 				break
-
 			case "route":
 				routeLayersStr, ok := block["layers"]
 				if !ok {
@@ -231,6 +222,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				for l := range layersSplit {
 					layersSplit[l] = strings.TrimSpace(layersSplit[l])
 				}
+
 				start := 0
 				end := 0
 				start, err := strconv.Atoi(layersSplit[0])
@@ -257,6 +249,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					firstLayerIdx:  i + start,
 					secondLayerIdx: -1,
 				}
+
 				if end < 0 {
 					l.secondLayerIdx = i + end
 					filtersIdx = outputFilters[i+start] + outputFilters[i+end]
@@ -274,10 +267,6 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				input = routeBlock
 
 				layers = append(layers, &ll)
-				fmt.Println(i, ll)
-
-				// @todo upsample node
-				// @todo evaluate 'prevFilters'
 
 				break
 			case "yolo":
@@ -334,12 +323,22 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					flatten = append(flatten, selectedAnchors[a][0])
 					flatten = append(flatten, selectedAnchors[a][1])
 				}
+
+				ignoreThreshStr, ok := block["ignore_thresh"]
+				if !ok {
+					fmt.Printf("Warning: no field 'ignore_thresh' for YOLO layer")
+				}
+				ignoreThresh64, err := strconv.ParseFloat(ignoreThreshStr, 32)
+				if !ok {
+					fmt.Printf("Warning: can't cast 'ignore_thresh' to float32 for YOLO layer")
+				}
 				var l layerN = &yoloLayer{
 					masks:          masks,
 					anchors:        selectedAnchors,
 					flattenAhcnors: flatten,
 					inputSize:      inputS[2],
 					classesNum:     classesNumber,
+					ignoreThresh:   float32(ignoreThresh64),
 				}
 				yoloBlock, err := l.ToNode(g, input)
 				if err != nil {
@@ -349,9 +348,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				input = yoloBlock
 
 				layers = append(layers, &l)
-				fmt.Println(l)
-
-				// @todo detection node? or just flow?
+				yoloNodes = append(yoloNodes, yoloBlock)
 				filtersIdx = prevFilters
 				break
 			case "maxpool":
@@ -380,76 +377,34 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					size:   size,
 					stride: stride,
 				}
-
 				maxpoolingBlock, err := l.ToNode(g, input)
 				if err != nil {
 					fmt.Printf("\tError preparing Max-Pooling block: %s\n", err.Error())
 				}
 				networkNodes = append(networkNodes, maxpoolingBlock)
 				input = maxpoolingBlock
-
 				layers = append(layers, &l)
-				fmt.Println(l)
-
 				filtersIdx = prevFilters
 				break
 			default:
-				fmt.Println("Impossible")
+				fmt.Printf("Impossible layer: '%s'\n", layerType)
 				break
 			}
 		}
 		prevFilters = filtersIdx
 		outputFilters = append(outputFilters, filtersIdx)
 	}
-	// for i := range networkNodes {
-	// 	fmt.Println(i, networkNodes[i].Shape())
-	// }
-	/*
-		outInterface := layers[len(layers)-1]
-		outYOLO := *outInterface
-		out := outYOLO.(*yoloLayer)*/
 
-	fmt.Println("Loading weights...")
+	// Pretty print
+	for i := range layers {
+		fmt.Println(*layers[i])
+	}
 
-	// for i := range layers {
-	// 	l := *layers[i]
-	// 	layerType := l.Type()
-	// 	// Ignore everything except convolutional layers
-	// 	if layerType == "convolutional" {
-	// 		layer := l.(*convLayer)
-	// 		if layer.batchNormalize > 0 && layer.batchNormNode != nil {
-	// 			biasesNum := layer.batchNormNode.Shape()[0]
-
-	// 			biases := weightsData[ptr : ptr+biasesNum]
-	// 			_ = biases
-	// 			ptr += biasesNum
-
-	// 			weights := weightsData[ptr : ptr+biasesNum]
-	// 			_ = weights
-	// 			ptr += biasesNum
-
-	// 			means := weightsData[ptr : ptr+biasesNum]
-	// 			_ = means
-	// 			ptr += biasesNum
-
-	// 			vars := weightsData[ptr : ptr+biasesNum]
-	// 			_ = vars
-	// 			ptr += biasesNum
-
-	// 			//@todo load weights/biases and etc.
-	// 		} else {
-	// 			biasesNum := layer.convNode.Shape()[0]
-	// 			convBiases := weightsData[ptr : ptr+biasesNum]
-	// 			_ = convBiases
-	// 			ptr += biasesNum
-	// 			//@todo load weights/biases and etc.
-	// 		}
-
-	// 		weightsNumel := layer.convNode.Shape().TotalSize()
-
-	// 		ptr += weightsNumel
-	// 	}
-	// }
-
-	return &YoloV3Tiny{out: []*gorgonia.Node{networkNodes[16], networkNodes[len(networkNodes)-1]}}, nil
+	return &YOLOv3{
+		classesNum:   classesNumber,
+		cellsInRow:   cellsInRow,
+		boxesPerCell: boxesPerCell,
+		netSize:      netWidth,
+		out:          yoloNodes,
+	}, nil
 }
