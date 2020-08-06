@@ -60,9 +60,10 @@ func main() {
 	prog, locMap, _ := gorgonia.Compile(g)
 	tm := G.NewTapeMachine(g, gorgonia.WithPrecompiled(prog, locMap), gorgonia.BindDualValues(model.learningNodes...))
 	solver := gorgonia.NewRMSPropSolver()
+	_ = solver
 	defer tm.Close()
 	st := time.Now()
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 400; i++ {
 		if err := tm.RunAll(); err != nil {
 			fmt.Printf("Can't run tape machine due the error: %s\n", err.Error())
 			return
@@ -72,7 +73,7 @@ func main() {
 			fmt.Println(err)
 		}
 		t := model.out[0].Value().(tensor.Tensor)
-		fmt.Println(t)
+		fmt.Println(t, cost.Value())
 		tm.Reset()
 	}
 
