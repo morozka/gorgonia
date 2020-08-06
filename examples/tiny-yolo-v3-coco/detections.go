@@ -1,18 +1,22 @@
 package main
 
 import (
+
 	"fmt"
 	"image"
 	"sort"
 
 	"gorgonia.org/tensor"
+
 )
 
 var (
 	anchors       = []float32{0.57273, 0.677385, 1.87446, 2.06253, 3.33843, 5.47434, 7.88282, 3.52778, 9.77052, 9.16828}
 	classesArr    = []string{"person", "bicycle", "car", "motorbike", "aeroplane", "bus", "train", "truck", "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "sofa", "pottedplant", "bed", "diningtable", "toilet", "tvmonitor", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"}
+
 	scoreTreshold = float32(0.8)
 	iouTreshold   = float32(0.3)
+
 )
 
 // DetectionRectangle Representation of detection
@@ -50,6 +54,7 @@ func (detections DetectionsOrder) Less(i, j int) bool {
 
 // ProcessOutput Detection layer
 func (net *YOLOv3) ProcessOutput() (Detections, error) {
+
 	bb := make(Detections, 0)
 	t := net.out[0].Value().(tensor.Tensor)
 	att := t.Data().([]float32)
@@ -59,11 +64,13 @@ func (net *YOLOv3) ProcessOutput() (Detections, error) {
 	att = t.Data().([]float32)
 	bb = parseOutToDetections(att, bb, scoreTreshold)
 	fmt.Println(bb)
+
 	bb = nonMaxSupr(bb)
 	sort.Sort(DetectionsOrder(bb))
 
 	return bb, nil
 }
+
 func parseOutToDetections(att []float32, bb Detections, scoreTreshold float32) Detections {
 	for i := 0; i < len(att); i += 85 {
 		class := 0
@@ -87,6 +94,7 @@ func parseOutToDetections(att []float32, bb Detections, scoreTreshold float32) D
 	}
 	return bb
 }
+
 func nonMaxSupr(detections Detections) Detections {
 	//sorts boxes by confidence
 	sort.Sort(detections)

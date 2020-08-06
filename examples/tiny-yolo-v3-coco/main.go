@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+
 	"time"
 
 	"gorgonia.org/gorgonia"
@@ -21,7 +22,9 @@ var (
 	leakyCoef   = 0.1
 	weights     = "./data/yolov3-tiny.weights"
 	cfg         = "./data/yolov3-tiny.cfg"
+
 	classesCoco = "person bicycle car motorbike aeroplane bus train truck boat trafficlight firehydrant stopsign parkingmeter bench bird cat dog horse sheep cow elephant bear zebra giraffe backpack umbrella handbag tie suitcase frisbee skis snowboard sportsball kite baseballbat baseballglove skateboard surfboard tennisracket bottle wineglass cup fork knife spoon bowl banana apple sandwich orange broccoli carrot hotdog pizza donut cake chair sofa pottedplant bed diningtable toilet tvmonitor laptop mouse remote keyboard cellphone microwave oven toaster sink refrigerator book clock vase scissors teddybear hairdrier toothbrush"
+
 )
 
 func main() {
@@ -57,7 +60,9 @@ func main() {
 	fmt.Println("Feedforwarded in:", time.Since(st))
 
 	st = time.Now()
+
 	classesArr = strings.Split(classesCoco, " ")
+
 	dets, err := model.ProcessOutput()
 	if err != nil {
 		fmt.Printf("Can't do postprocessing due error: %s", err.Error())
