@@ -817,6 +817,9 @@ func (op *maxPoolOp) do(out, in tensor.Tensor) {
 			outStride, inStride, maskStride,
 			out.Data().([]float32), in.Data().([]float32),
 			maskData)
+		if maskData[0] == -1 {
+			panic("GORGONIA - CNANS 0-1")
+		}
 	}
 }
 
@@ -1044,6 +1047,11 @@ func (op *maxPoolDiffOp) f32s(batches, channels, pooledH, pooledW int,
 				for pw := 0; pw < pooledW; pw++ {
 					index := ph*pooledW + pw
 					inIndex := maskData[index]
+					if index >= len(outDiffData) || index < 0 || inIndex < 0 || inIndex >= len(inDiffData) {
+						fmt.Println("outdiff", len(outDiffData), len(inDiffData))
+						//fmt.Println("maskdata", maskData) all masks are -1
+					}
+
 					inDiffData[inIndex] += outDiffData[index]
 				}
 			}

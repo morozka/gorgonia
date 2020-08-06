@@ -1,6 +1,6 @@
 module gorgonia.org/gorgonia
 
-go 1.12
+go 1.13
 
 require (
 	github.com/awalterschulze/gographviz v0.0.0-20190221210632-1e9ccb565bca
