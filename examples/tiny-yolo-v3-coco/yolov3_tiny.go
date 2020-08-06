@@ -16,11 +16,11 @@ import (
 type YOLOv3 struct {
 	g                                             *gorgonia.ExprGraph
 	classesNum, cellsInRow, boxesPerCell, netSize int
-	out                                           *gorgonia.Node
+	out                                           []*gorgonia.Node
 }
 
 // GetOutput Get out YOLO layers (can be multiple of them)
-func (net *YOLOv3) GetOutput() *gorgonia.Node {
+func (net *YOLOv3) GetOutput() []*gorgonia.Node {
 	return net.out
 }
 
@@ -400,16 +400,11 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, c
 		fmt.Println(*layers[i])
 	}
 
-	concatYoloLayers, err := gorgonia.Concat(1, yoloNodes...)
-	if err != nil {
-		return nil, errors.Wrap(err, "Can't concat YOLO layers")
-	}
-
 	return &YOLOv3{
 		classesNum:   classesNumber,
 		cellsInRow:   cellsInRow,
 		boxesPerCell: boxesPerCell,
 		netSize:      netWidth,
-		out:          concatYoloLayers,
+		out:          yoloNodes,
 	}, nil
 }

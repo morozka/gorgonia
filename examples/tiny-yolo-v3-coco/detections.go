@@ -39,10 +39,21 @@ func (detections Detections) Swap(i, j int) {
 }
 func (detections Detections) Less(i, j int) bool { return detections[i].conf < detections[j].conf }
 
+// DetectionsOrder Ordering for X-axis
+type DetectionsOrder []*DetectionRectangle
+
+func (detections DetectionsOrder) Len() int { return len(detections) }
+func (detections DetectionsOrder) Swap(i, j int) {
+	detections[i], detections[j] = detections[j], detections[i]
+}
+func (detections DetectionsOrder) Less(i, j int) bool {
+	return detections[i].rect.Min.X < detections[j].rect.Min.X
+}
+
 // ProcessOutput Detection layer
 func (net *YOLOv3) ProcessOutput() (Detections, error) {
 	outNodes := net.GetOutput()
-	outValue := outNodes.Value()
+	outValue := outNodes[0].Value()
 	outTensor := outValue.(tensor.Tensor)
 
 	bb := make(Detections, 0)
@@ -97,7 +108,10 @@ func (net *YOLOv3) ProcessOutput() (Detections, error) {
 			}
 		}
 	}
-	return nil, nil
+	bb = nonMaxSupr(bb)
+	sort.Sort(DetectionsOrder(bb))
+
+	return bb, nil
 }
 
 func nonMaxSupr(detections Detections) Detections {
