@@ -495,8 +495,8 @@ func (op *yoloOp) prepRT(input, yoloBoxes, target []float32, gridSize int) []flo
 	}
 	for i := 0; i < len(bestAnchors); i++ {
 		if bestAnchors[i][0] != -1 {
-			scale := (2 - target[i*5+3]*target[i*5+4])
-
+			//scale := (2 - target[i*5+3]*target[i*5+4])
+			var scale float32 = 1
 			gi := bestAnchors[i][1]
 			gj := bestAnchors[i][2]
 			gx := unsigm(target[i*5+1]*gsf32 - float32(gi))
@@ -504,14 +504,15 @@ func (op *yoloOp) prepRT(input, yoloBoxes, target []float32, gridSize int) []flo
 			banchor := op.mask[bestAnchors[i][0]] * 2
 			gw := float32(math.Log(float64(target[i*5+3])/op.anchors[banchor] + 1e-16))
 			gh := float32(math.Log(float64(target[i*5+4])/op.anchors[banchor+1] + 1e-16))
-			fmt.Println(bestAnchors[i], gi, gj, gx, gy, gw, gh, scale)
-			boxi := gj*gridSize*len(op.mask) + gi*len(op.mask) + bestAnchors[i][0]
+			fmt.Println(bestAnchors[i], gi, gj, gx, gy, gw, gh, scale, gridSize)
+			boxi := gj*gridSize*(5+op.numClasses)*len(op.mask) + gi*(5+op.numClasses)*len(op.mask) + bestAnchors[i][0]*(5+op.numClasses)
 
 			rt[boxi] = scale * (input[boxi] - gx)     //mseLoss(gx, input[boxi], scale)
 			rt[boxi+1] = scale * (input[boxi+1] - gy) //mseLoss(gy, input[boxi+1], scale)
 			rt[boxi+2] = scale * (input[boxi+2] - gw) //mseLoss(gw, input[boxi+2], scale)
 			rt[boxi+3] = scale * (input[boxi+3] - gh) //mseLoss(gh, input[boxi+3], scale)
 			rt[boxi+4] = input[boxi+4] - 14
+			fmt.Println(input[boxi+4], rt[boxi+4], boxi)
 			for j := 4; j < 5+op.numClasses; j++ {
 				rt[boxi+j] = input[boxi+j]
 				if j == int(target[i]) {
