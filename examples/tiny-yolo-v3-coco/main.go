@@ -49,8 +49,10 @@ func main() {
 		fmt.Printf("Can't let input = []float32 due the error: %s\n", err.Error())
 		return
 	}
-	sum16th := gorgonia.Must(gorgonia.Sum(model.out[0], 0, 1, 2))
-	cost := sum16th
+
+	cost := gorgonia.Must(gorgonia.Div(model.out[0], gorgonia.NewScalar(g, tensor.Float32, gorgonia.WithValue(float32(13*13*85*3)))))
+	cost = gorgonia.Must(gorgonia.Square(cost))
+	cost = gorgonia.Must(gorgonia.Sum(cost, 0, 1, 2))
 	//sumlast := gorgonia.Must(gorgonia.Sum(model.out[1], 0, 1, 2))
 	//cost := gorgonia.Must(gorgonia.Add(sum16th, sumlast))
 	_, err = gorgonia.Grad(cost, model.learningNodes...)
@@ -59,11 +61,11 @@ func main() {
 	}
 	prog, locMap, _ := gorgonia.Compile(g)
 	tm := G.NewTapeMachine(g, gorgonia.WithPrecompiled(prog, locMap), gorgonia.BindDualValues(model.learningNodes...))
-	solver := gorgonia.NewRMSPropSolver()
+	solver := gorgonia.NewAdaGradSolver()
 	_ = solver
 	defer tm.Close()
 	st := time.Now()
-	for i := 0; i < 400; i++ {
+	for i := 0; i < 4000; i++ {
 		if err := tm.RunAll(); err != nil {
 			fmt.Printf("Can't run tape machine due the error: %s\n", err.Error())
 			return

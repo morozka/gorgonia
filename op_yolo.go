@@ -223,7 +223,7 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	}
 	rin := in.Clone().(tensor.Tensor)
 	outyolo, _ := op.yoloDoer(in, batch, stride, grid, bboxAttrs, numAnchors, currentAnchors)
-	fmt.Println(in)
+	fmt.Println(rin)
 	yboxes32 := make([]float32, 0)
 	input32 := make([]float32, 0)
 	switch outyolo.Dtype() {
@@ -254,6 +254,7 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	switch outyolo.Dtype() {
 	case Float32:
 		resten := tensor.New(tensor.WithShape(1, grid*grid*len(op.mask), 5+op.numClasses), tensor.Of(tensor.Float32), tensor.WithBacking(res))
+		fmt.Println(resten)
 		return resten, nil
 	case Float64:
 		res64 := make([]float64, len(res), len(res))
@@ -269,7 +270,7 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 
 func (op *yoloOp) DiffWRT(inputs int) []bool { return []bool{true} }
 
-//SymDiff - if not working it should be removed with yoloOpDiff and ApplyOp interface.
+//SymDiff -
 func (op *yoloOp) SymDiff(inputs Nodes, output, grad *Node) (retVal Nodes, err error) {
 	if err = checkArity(op, len(inputs)); err != nil {
 		return
@@ -280,11 +281,9 @@ func (op *yoloOp) SymDiff(inputs Nodes, output, grad *Node) (retVal Nodes, err e
 	diff := &yoloOpDiff{op2}
 
 	var ret *Node
-	if ret, err = ApplyOp(diff, in, output); err != nil {
+	if ret, err = ApplyOp(diff, in, grad); err != nil {
 		return nil, err
 	}
-
-	fmt.Println("YoloEnded!", ret.Shape())
 	return Nodes{ret}, nil
 
 }
@@ -490,7 +489,8 @@ func (op *yoloOp) prepRT(input, yoloBoxes, target []float32, gridSize int) []flo
 	bestIous := op.prepBestIous(yoloBoxes, target)
 	for i := 0; i < len(yoloBoxes); i = i + (5 + op.numClasses) {
 		if bestIous[i/(5+op.numClasses)][0] <= float32(op.ignoreTresh) {
-			rt[i+4] = bceLoss(0, yoloBoxes[i+4])
+			//rt[i+4] = bceLoss(0, yoloBoxes[i+4])
+			rt[i+4] = input[i+4] + 14
 		}
 	}
 	for i := 0; i < len(bestAnchors); i++ {
@@ -502,21 +502,22 @@ func (op *yoloOp) prepRT(input, yoloBoxes, target []float32, gridSize int) []flo
 			gx := unsigm(target[i*5+1]*gsf32 - float32(gi))
 			gy := unsigm(target[i*5+2]*gsf32 - float32(gj))
 			banchor := op.mask[bestAnchors[i][0]] * 2
-			gw := float32(math.Log(float64(target[i*5+3])/op.anchors[banchor] + 1e-6))
-			gh := float32(math.Log(float64(target[i*5+4])/op.anchors[banchor+1] + 1e-6))
-			fmt.Println(bestAnchors[i][0], gi, gj, gx, gy, gw, gh)
+			gw := float32(math.Log(float64(target[i*5+3])/op.anchors[banchor] + 1e-16))
+			gh := float32(math.Log(float64(target[i*5+4])/op.anchors[banchor+1] + 1e-16))
+			fmt.Println(bestAnchors[i], gi, gj, gx, gy, gw, gh, scale)
 			boxi := gj*gridSize*len(op.mask) + gi*len(op.mask) + bestAnchors[i][0]
+
 			rt[boxi] = scale * (input[boxi] - gx)     //mseLoss(gx, input[boxi], scale)
 			rt[boxi+1] = scale * (input[boxi+1] - gy) //mseLoss(gy, input[boxi+1], scale)
 			rt[boxi+2] = scale * (input[boxi+2] - gw) //mseLoss(gw, input[boxi+2], scale)
 			rt[boxi+3] = scale * (input[boxi+3] - gh) //mseLoss(gh, input[boxi+3], scale)
-			rt[boxi+4] = input[boxi+4] - unsigm(1)
+			rt[boxi+4] = input[boxi+4] - 14
 			for j := 4; j < 5+op.numClasses; j++ {
 				rt[boxi+j] = input[boxi+j]
 				if j == int(target[i]) {
-					rt[boxi+j] = input[boxi+j] - unsigm(1.0)
+					rt[boxi+j] = input[boxi+j] - 14
 				} else {
-					rt[boxi+j] = input[boxi+j] - unsigm(0.0)
+					rt[boxi+j] = input[boxi+j] + 14
 				}
 			}
 			/*
@@ -532,6 +533,14 @@ func (op *yoloOp) prepRT(input, yoloBoxes, target []float32, gridSize int) []flo
 						rt[boxi+5+j] = bceLoss(0, yoloBoxes[boxi+4])
 					}
 				}*/
+		}
+	}
+	for i := 0; i < len(rt); i++ {
+		if rt[i] > 14 {
+			rt[i] = 14
+		}
+		if rt[i] < (-14) {
+			rt[i] = -14
 		}
 	}
 	return rt
@@ -648,14 +657,17 @@ func (op *yoloOp) DoDiff(ctx ExecutionContext, inputs Nodes, output *Node) (err 
 func (op *yoloOpDiff) Do(inputs ...Value) (Value, error) {
 	in := inputs[0]
 	output := inputs[1]
+
 	inGrad := tensor.New(tensor.Of(in.Dtype()), tensor.WithShape(in.Shape().Clone()...), tensor.WithEngine(in.(tensor.Tensor).Engine()))
 	switch in.Dtype() {
 	case tensor.Float32:
 		inGradData := inGrad.Data().([]float32)
 		outValueData := output.Data().([]float32)
 		for i := range inGradData {
-			inGradData[i] = 0.0
+			inGradData[i] = outValueData[i] //0.0
 		}
+		inGrad.Reshape(1, len(op.mask)*(5+op.numClasses), op.gridSize, op.gridSize)
+		return inGrad, nil
 		for i := 0; i < len(outValueData); i = i + 5 + op.numClasses {
 			for j := 0; j < 4; j++ {
 				inGradData[i+j] = outValueData[i+j] // float32(len(outValueData))
