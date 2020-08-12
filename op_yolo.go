@@ -13,6 +13,7 @@ import (
 )
 
 type yoloOp struct {
+	scale       []float32
 	anchors     []float64
 	mask        []int
 	ignoreTresh float64
@@ -222,28 +223,28 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 		return nil, errors.Wrap(err, "Can't reshape bbox for YOLO v3")
 	}
 	rin := in.Clone().(tensor.Tensor)
-	outyolo, _ := op.yoloDoer(in, batch, stride, grid, bboxAttrs, numAnchors, currentAnchors)
+	outyolo, _ := op.yoloDoer(rin, batch, stride, grid, bboxAttrs, numAnchors, currentAnchors)
 	fmt.Println(rin)
 	yboxes32 := make([]float32, 0)
 	input32 := make([]float32, 0)
 	switch outyolo.Dtype() {
 	case Float32:
-		rin.Reshape(in.Shape()[0] * in.Shape()[1] * in.Shape()[2])
+		in.Reshape(in.Shape()[0] * in.Shape()[1] * in.Shape()[2])
 		outyolo.Reshape(outyolo.Shape()[0] * outyolo.Shape()[1] * outyolo.Shape()[2])
 		for i := 0; i < outyolo.Shape()[0]; i++ {
 			buf, _ := outyolo.At(i)
 			yboxes32 = append(yboxes32, buf.(float32))
-			buf, _ = rin.At(i)
+			buf, _ = in.At(i)
 			input32 = append(input32, buf.(float32))
 		}
 		break
 	case Float64:
-		rin.Reshape(in.Shape()[0] * in.Shape()[1] * in.Shape()[2])
+		in.Reshape(in.Shape()[0] * in.Shape()[1] * in.Shape()[2])
 		outyolo.Reshape(outyolo.Shape()[0] * outyolo.Shape()[1] * outyolo.Shape()[2])
 		for i := 0; i < outyolo.Shape()[0]; i++ {
 			buf, _ := outyolo.At(i)
 			yboxes32 = append(yboxes32, float32(buf.(float64)))
-			buf, _ = rin.At(i)
+			buf, _ = in.At(i)
 			input32 = append(input32, float32(buf.(float64)))
 		}
 		break
@@ -278,7 +279,7 @@ func (op *yoloOp) SymDiff(inputs Nodes, output, grad *Node) (retVal Nodes, err e
 	in := inputs[0]
 	var op2 yoloOp
 	op2 = *op
-	diff := &yoloOpDiff{op2}
+	diff := &yoloOpDiff{yoloOp: op2, YOP: op}
 
 	var ret *Node
 	if ret, err = ApplyOp(diff, in, grad); err != nil {
@@ -483,6 +484,11 @@ func (op *yoloOp) prepBestAnchors(target []float32, gridSize float32) [][]int {
 
 //returns array with values, that yolo layer should have
 func (op *yoloOp) prepRT(input, yoloBoxes, target []float32, gridSize int) []float32 {
+
+	op.scale = make([]float32, len(input), len(input))
+	for i := range op.scale {
+		op.scale[i] = 1
+	}
 	rt := make([]float32, len(yoloBoxes), len(yoloBoxes))
 	gsf32 := float32(gridSize)
 	bestAnchors := op.prepBestAnchors(target, float32(gridSize))
@@ -490,13 +496,14 @@ func (op *yoloOp) prepRT(input, yoloBoxes, target []float32, gridSize int) []flo
 	for i := 0; i < len(yoloBoxes); i = i + (5 + op.numClasses) {
 		if bestIous[i/(5+op.numClasses)][0] <= float32(op.ignoreTresh) {
 			//rt[i+4] = bceLoss(0, yoloBoxes[i+4])
-			rt[i+4] = input[i+4] + 14
+			//rt[i+4] = input[i+4] + 14
 		}
 	}
 	for i := 0; i < len(bestAnchors); i++ {
 		if bestAnchors[i][0] != -1 {
-			//scale := (2 - target[i*5+3]*target[i*5+4])
-			var scale float32 = 1
+			scale := (2 - target[i*5+3]*target[i*5+4])
+
+			//var scale float32 = 1
 			gi := bestAnchors[i][1]
 			gj := bestAnchors[i][2]
 			gx := unsigm(target[i*5+1]*gsf32 - float32(gi))
@@ -506,21 +513,25 @@ func (op *yoloOp) prepRT(input, yoloBoxes, target []float32, gridSize int) []flo
 			gh := float32(math.Log(float64(target[i*5+4])/op.anchors[banchor+1] + 1e-16))
 			fmt.Println(bestAnchors[i], gi, gj, gx, gy, gw, gh, scale, gridSize)
 			boxi := gj*gridSize*(5+op.numClasses)*len(op.mask) + gi*(5+op.numClasses)*len(op.mask) + bestAnchors[i][0]*(5+op.numClasses)
-
-			rt[boxi] = scale * (input[boxi] - gx)     //mseLoss(gx, input[boxi], scale)
+			op.scale[boxi] = scale
+			rt[boxi] = scale * (input[boxi] - gx) //mseLoss(gx, input[boxi], scale)
+			op.scale[boxi+1] = scale
 			rt[boxi+1] = scale * (input[boxi+1] - gy) //mseLoss(gy, input[boxi+1], scale)
+			op.scale[boxi+2] = scale
 			rt[boxi+2] = scale * (input[boxi+2] - gw) //mseLoss(gw, input[boxi+2], scale)
+			op.scale[boxi+3] = scale
 			rt[boxi+3] = scale * (input[boxi+3] - gh) //mseLoss(gh, input[boxi+3], scale)
-			rt[boxi+4] = input[boxi+4] - 14
-			fmt.Println(input[boxi+4], rt[boxi+4], boxi)
-			for j := 4; j < 5+op.numClasses; j++ {
-				rt[boxi+j] = input[boxi+j]
-				if j == int(target[i]) {
-					rt[boxi+j] = input[boxi+j] - 14
-				} else {
-					rt[boxi+j] = input[boxi+j] + 14
-				}
-			}
+			/*
+				rt[boxi+4] = input[boxi+4] - 14
+				fmt.Println(input[boxi+4], rt[boxi+4], boxi)
+				for j := 4; j < 5+op.numClasses; j++ {
+					rt[boxi+j] = input[boxi+j]
+					if j == int(target[i]) {
+						rt[boxi+j] = input[boxi+j] - 14
+					} else {
+						rt[boxi+j] = input[boxi+j] + 14
+					}
+				}*/
 			/*
 				rt[boxi] = mseLoss(gx, input[boxi], scale)
 				rt[boxi+1] = mseLoss(gy, input[boxi+1], scale)
@@ -534,14 +545,6 @@ func (op *yoloOp) prepRT(input, yoloBoxes, target []float32, gridSize int) []flo
 						rt[boxi+5+j] = bceLoss(0, yoloBoxes[boxi+4])
 					}
 				}*/
-		}
-	}
-	for i := 0; i < len(rt); i++ {
-		if rt[i] > 14 {
-			rt[i] = 14
-		}
-		if rt[i] < (-14) {
-			rt[i] = -14
 		}
 	}
 	return rt
@@ -598,6 +601,7 @@ func unsigm(target float32) float32 {
 
 type yoloOpDiff struct {
 	yoloOp
+	YOP *yoloOp
 }
 
 func (op *yoloOpDiff) Arity() int { return 2 }
@@ -658,14 +662,17 @@ func (op *yoloOp) DoDiff(ctx ExecutionContext, inputs Nodes, output *Node) (err 
 func (op *yoloOpDiff) Do(inputs ...Value) (Value, error) {
 	in := inputs[0]
 	output := inputs[1]
-
+	outt := output.(tensor.Tensor)
+	outt.T(0, 2, 1)
+	outt.Transpose()
+	output = outt
 	inGrad := tensor.New(tensor.Of(in.Dtype()), tensor.WithShape(in.Shape().Clone()...), tensor.WithEngine(in.(tensor.Tensor).Engine()))
 	switch in.Dtype() {
 	case tensor.Float32:
 		inGradData := inGrad.Data().([]float32)
 		outValueData := output.Data().([]float32)
 		for i := range inGradData {
-			inGradData[i] = outValueData[i] //0.0
+			inGradData[i] = outValueData[i] * op.YOP.scale[i] //0.0
 		}
 		inGrad.Reshape(1, len(op.mask)*(5+op.numClasses), op.gridSize, op.gridSize)
 		return inGrad, nil

@@ -8,6 +8,7 @@ import (
 	"gorgonia.org/tensor"
 	"io/ioutil"
 	"log"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -50,32 +51,40 @@ func main() {
 		return
 	}
 
-	cost := gorgonia.Must(gorgonia.Div(model.out[0], gorgonia.NewScalar(g, tensor.Float32, gorgonia.WithValue(float32(13*13*85*3)))))
+	cost := gorgonia.Must(gorgonia.Div(model.out[0], gorgonia.NewScalar(g, tensor.Float32, gorgonia.WithValue(float32(2)))))
 	cost = gorgonia.Must(gorgonia.Square(cost))
-	cost = gorgonia.Must(gorgonia.Sum(cost, 0, 1, 2))
+	costl := gorgonia.Must(gorgonia.Sum(cost, 0, 1, 2))
 	//sumlast := gorgonia.Must(gorgonia.Sum(model.out[1], 0, 1, 2))
 	//cost := gorgonia.Must(gorgonia.Add(sum16th, sumlast))
-	_, err = gorgonia.Grad(cost, model.learningNodes...)
+	_, err = gorgonia.Grad(costl, model.learningNodes...)
 	if err != nil {
 		panic(err)
 	}
 	prog, locMap, _ := gorgonia.Compile(g)
 	tm := G.NewTapeMachine(g, gorgonia.WithPrecompiled(prog, locMap), gorgonia.BindDualValues(model.learningNodes...))
-	solver := gorgonia.NewAdaGradSolver()
+	solver := gorgonia.NewRMSPropSolver(gorgonia.WithLearnRate(0.000001))
 	_ = solver
 	defer tm.Close()
 	st := time.Now()
-	for i := 0; i < 4000; i++ {
+	ff, err := os.Create("log.txt")
+	defer ff.Close()
+	if err != nil {
+		panic(err)
+	}
+	for i := 0; i < 1000; i++ {
 		if err := tm.RunAll(); err != nil {
 			fmt.Printf("Can't run tape machine due the error: %s\n", err.Error())
 			return
 		}
+		t := model.out[0].Value().(tensor.Tensor)
+		fmt.Println(t, costl.Value())
 		err = solver.Step(gorgonia.NodesToValueGrads(model.learningNodes))
 		if err != nil {
+
 			fmt.Println(err)
 		}
-		t := model.out[0].Value().(tensor.Tensor)
-		fmt.Println(t, cost.Value())
+
+		ff.Write([]byte(fmt.Sprint(cost.Value(), "\n")))
 		tm.Reset()
 	}
 
