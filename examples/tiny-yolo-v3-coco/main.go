@@ -52,8 +52,6 @@ func main() {
 	}
 
 	cost := gorgonia.Must(gorgonia.Sum(model.out[0], 0, 1, 2))
-	//sumlast := gorgonia.Must(gorgonia.Sum(model.out[1], 0, 1, 2))
-	//cost := gorgonia.Must(gorgonia.Add(sum16th, sumlast))
 	_, err = gorgonia.Grad(cost, model.learningNodes...)
 	if err != nil {
 		panic(err)
@@ -69,7 +67,14 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	targets, err := prepareTrain32("./data")
+	if err != nil {
+		panic(err)
+	}
+	model.SetTarget(targets[0])
+	model.ActivateTrainingMode()
 	for i := 0; i < 4000; i++ {
+		gorgonia.Let(input, image)
 		if err := tm.RunAll(); err != nil {
 			fmt.Printf("Can't run tape machine due the error: %s\n", err.Error())
 			return
@@ -90,6 +95,12 @@ func main() {
 
 		ff.Write([]byte(fmt.Sprint(cost.Value(), "\n")))
 		tm.Reset()
+	}
+	model.DeactivateTrainingMode()
+	gorgonia.Let(input, image)
+	if err := tm.RunAll(); err != nil {
+		fmt.Printf("Can't run tape machine due the error: %s\n", err.Error())
+		return
 	}
 	fmt.Println("Feedforwarded in:", time.Since(st))
 	return
@@ -139,13 +150,12 @@ func main() {
 	// fmt.Println(model.out.Value())
 	tm.Reset()
 }
-func prepareTrain32(pathToDir string, gridSize int) (*tensor.Dense, error) {
+func prepareTrain32(pathToDir string) ([][]float32, error) {
 	files, err := ioutil.ReadDir(pathToDir)
 	if err != nil {
-		return &tensor.Dense{}, err
+		return [][]float32{}, err
 	}
 	farr := [][]float32{}
-	maxLen := gridSize * gridSize
 	numTrainFiles := 0
 	for _, file := range files {
 		cfarr := []float32{}
@@ -155,7 +165,7 @@ func prepareTrain32(pathToDir string, gridSize int) (*tensor.Dense, error) {
 		numTrainFiles++
 		f, err := ioutil.ReadFile(pathToDir + "/" + file.Name())
 		if err != nil {
-			return &tensor.Dense{}, err
+			return [][]float32{}, err
 		}
 		str := string(f)
 		fmt.Println(str)
@@ -167,23 +177,14 @@ func prepareTrain32(pathToDir string, gridSize int) (*tensor.Dense, error) {
 			}
 			if s, err := strconv.ParseFloat(arr[i], 32); err == nil {
 				if float32(s) < 0 {
-					return &tensor.Dense{}, errors.New("incorrect training data")
+					return [][]float32{}, errors.New("incorrect training data")
 				}
 				cfarr = append(cfarr, float32(s))
 			} else {
-				return &tensor.Dense{}, err
+				return [][]float32{}, err
 			}
 		}
 		farr = append(farr, cfarr)
 	}
-	backArr := []float32{}
-	for i := 0; i < len(farr); i++ {
-		backArr = append(backArr, float32(len(farr[i])))
-		backArr = append(backArr, farr[i]...)
-		if len(farr[i]) < maxLen {
-			zeroes := make([]float32, maxLen-len(farr[i])-1)
-			backArr = append(backArr, zeroes...)
-		}
-	}
-	return tensor.New(tensor.WithShape(numTrainFiles, 1, gridSize, gridSize), tensor.Of(tensor.Float32), tensor.WithBacking(backArr)), nil
+	return farr, nil
 }

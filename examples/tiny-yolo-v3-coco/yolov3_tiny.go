@@ -18,6 +18,35 @@ type YOLOv3 struct {
 	classesNum, boxesPerCell int
 	out                      []*gorgonia.Node
 	learningNodes            []*gorgonia.Node
+	yoloTrainers             []*gorgonia.YoloTrainer
+}
+
+func (net *YOLOv3) ActivateTrainingMode() error {
+	if len(net.yoloTrainers) == 0 {
+		return errors.New("No yolo-layers in model")
+	}
+	for _, j := range net.yoloTrainers {
+		j.StartTraining()
+	}
+	return nil
+}
+func (net *YOLOv3) DeactivateTrainingMode() error {
+	if len(net.yoloTrainers) == 0 {
+		return errors.New("No yolo-layers in model")
+	}
+	for _, j := range net.yoloTrainers {
+		j.StopTraining()
+	}
+	return nil
+}
+func (net *YOLOv3) SetTarget(target []float32) error {
+	if len(net.yoloTrainers) == 0 {
+		return errors.New("No yolo-layers in model")
+	}
+	for _, j := range net.yoloTrainers {
+		j.SetTarget(target)
+	}
+	return nil
 }
 
 // GetOutput Get out YOLO layers (can be multiple of them)
@@ -55,6 +84,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 
 	yoloNodes := []*gorgonia.Node{}
 	learningNodes := []*gorgonia.Node{}
+	yoloTrainers := []*gorgonia.YoloTrainer{}
 	for i := range blocks {
 		block := blocks[i]
 		filtersIdx := 0
@@ -327,7 +357,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				if !ok {
 					fmt.Printf("Warning: can't cast 'ignore_thresh' to float32 for YOLO layer")
 				}
-				var l layerN = &yoloLayer{
+				yl := yoloLayer{
 					masks:          masks,
 					anchors:        selectedAnchors,
 					flattenAhcnors: flatten,
@@ -335,6 +365,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					classesNum:     classesNumber,
 					ignoreThresh:   float32(ignoreThresh64),
 				}
+				var l layerN = &yl
 				yoloBlock, err := l.ToNode(g, input)
 				if err != nil {
 					fmt.Printf("\tError preparing YOLO block: %s\n", err.Error())
@@ -345,6 +376,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				layers = append(layers, &l)
 				yoloNodes = append(yoloNodes, yoloBlock)
 				filtersIdx = prevFilters
+				yoloTrainers = append(yoloTrainers, yl.yoloTrainer)
 				break
 			case "maxpool":
 				sizeStr, ok := block["size"]
@@ -400,5 +432,6 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 		boxesPerCell:  boxesPerCell,
 		out:           yoloNodes,
 		learningNodes: learningNodes,
+		yoloTrainers:  yoloTrainers,
 	}, nil
 }

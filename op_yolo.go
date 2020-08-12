@@ -12,6 +12,22 @@ import (
 	"gorgonia.org/tensor"
 )
 
+//YoloTrainer - struct that provides functionality for training yolo
+//yoloOp provides training only without batches now!
+type YoloTrainer struct {
+	yop *yoloOp
+}
+
+func (yt *YoloTrainer) SetTarget(target []float32) {
+	yt.yop.targetRT = target
+}
+func (yt *YoloTrainer) StartTraining() {
+	yt.yop.train = true
+}
+func (yt *YoloTrainer) StopTraining() {
+	yt.yop.train = false
+}
+
 type yoloOp struct {
 	scaleRT     []float32
 	targetRT    []float32
@@ -23,7 +39,6 @@ type yoloOp struct {
 	inpDim      int
 	numClasses  int
 	train       bool
-	target      *tensor.Dense
 	gridSize    int
 }
 
@@ -35,22 +50,18 @@ func newYoloOp(anchors []float64, mask []int, imheight, numclasses int, ignoreTr
 		ignoreTresh: ignoreTresh,
 		mask:        mask,
 		train:       train,
+		targetRT:    []float32{},
 	}
 	return yoloOp
 }
 
 //YoloDetector yolov3 output layer
-func YoloDetector(x *Node, anchors []float64, mask []int, imheight, numclasses int, ignoreTresh float64, target ...*tensor.Dense) (*Node, error) {
-	if len(target) > 0 {
-		op := newYoloOp(anchors, mask, imheight, numclasses, ignoreTresh, true)
-		op.target = target[0]
-		op.gridSize = x.Shape()[2]
-		retVal, err := ApplyOp(op, x)
-		return retVal, err
-	}
+func YoloDetector(x *Node, anchors []float64, mask []int, imheight, numclasses int, ignoreTresh float64) (*Node, *YoloTrainer, error) {
+
 	op := newYoloOp(anchors, mask, imheight, numclasses, ignoreTresh, false)
+	op.gridSize = x.Shape()[2]
 	retVal, err := ApplyOp(op, x)
-	return retVal, err
+	return retVal, &YoloTrainer{yop: op}, err
 }
 
 func (op *yoloOp) Arity() int {
@@ -167,12 +178,27 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 			}
 			currentAnchors = append(currentAnchors, op.anchors[i*2], op.anchors[i*2+1])
 		}
+		err = in.Reshape(batch, bboxAttrs*numAnchors, grid*grid)
+		if err != nil {
+			return nil, errors.Wrap(err, "Can't make reshape grid^2 for YOLO v3")
+		}
+
+		err = in.T(0, 2, 1)
+		if err != nil {
+			return nil, errors.Wrap(err, "Can't safely transponse input for YOLO v3")
+		}
+		err = in.Transpose()
+		if err != nil {
+			return nil, errors.Wrap(err, "Can't transponse input for YOLO v3")
+		}
+		err = in.Reshape(batch, grid*grid*numAnchors, bboxAttrs)
+		if err != nil {
+			return nil, errors.Wrap(err, "Can't reshape bbox for YOLO v3")
+		}
 		return op.yoloDoer(in, batch, stride, grid, bboxAttrs, numAnchors, currentAnchors)
 	}
 	in, _ := op.checkInput(inputs...)
-	target := op.target
 	//inv, _ := in.Slice(nil, S(0, in.Shape()[1]-1), nil, nil)
-	numTargets, _ := target.At(0, 0, 0, 0)
 	batch := in.Shape()[0]
 	stride := int(op.inpDim / in.Shape()[2])
 	grid := in.Shape()[2]
@@ -185,27 +211,7 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 		}
 		currentAnchors = append(currentAnchors, op.anchors[i*2], op.anchors[i*2+1])
 	}
-	var targets []float32
-	switch in.Dtype() {
-	case Float32:
-		lt := int(numTargets.(float32))
-		targets = make([]float32, lt, lt)
-		for i := 1; i <= lt; i++ {
-			buf, _ := target.At(0, target.Shape()[1]-1, 0+i/grid, 0+i%grid)
-			targets[i-1] = buf.(float32)
-		}
-		break
-	case Float64:
-		lt := int(numTargets.(float64))
-		targets = make([]float32, lt, lt)
-		for i := 1; i <= lt; i++ {
-			buf, _ := target.At(0, target.Shape()[1]-1, 0+i/grid, 0+i%grid)
-			targets[i-1] = float32(buf.(float64))
-		}
-		break
-	default:
-		panic("Unsupportable type for Yolo")
-	}
+
 	err = in.Reshape(batch, bboxAttrs*numAnchors, grid*grid)
 	if err != nil {
 		return nil, errors.Wrap(err, "Can't make reshape grid^2 for YOLO v3")
@@ -255,7 +261,7 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	}
 	op.inputRT = input32
 	op.yoloRT = yboxes32
-	res := op.prepRT(input32, yboxes32, targets, grid)
+	res := op.prepRT(input32, yboxes32, op.targetRT, grid)
 	switch outyolo.Dtype() {
 	case Float32:
 		resten := tensor.New(tensor.WithShape(1, grid*grid*len(op.mask), 5+op.numClasses), tensor.Of(tensor.Float32), tensor.WithBacking(res))
@@ -604,6 +610,9 @@ func (op *yoloOp) DoDiff(ctx ExecutionContext, inputs Nodes, output *Node) (err 
 	panic("yoloOp.DoDiff")
 }
 func (op *yoloOpDiff) Do(inputs ...Value) (Value, error) {
+	if len(op.YOP.targetRT) == 0 {
+		return nil, errors.New("no target in" + fmt.Sprint(op.YOP))
+	}
 	in := inputs[0]
 	output := inputs[1]
 	inGrad := tensor.New(tensor.Of(in.Dtype()), tensor.WithShape(output.Shape().Clone()...), tensor.WithEngine(in.(tensor.Tensor).Engine()))

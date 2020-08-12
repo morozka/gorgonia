@@ -15,6 +15,7 @@ type yoloLayer struct {
 	inputSize      int
 	classesNum     int
 	ignoreThresh   float32
+	yoloTrainer    *gorgonia.YoloTrainer
 }
 
 func (l *yoloLayer) String() string {
@@ -44,10 +45,9 @@ func (l *yoloLayer) ToNode(g *gorgonia.ExprGraph, input ...*gorgonia.Node) (*gor
 	//TEST ONLY should be removed with a correct parser
 	fmt.Println("DELETE ME I AM A TEST IN YOLO_LAYER.GO", inputN.Shape())
 	fanchors64 = append(fanchors64, fanchors64...)
-	target, err := prepareTrain32("./data", inputN.Shape()[2])
-	fmt.Println(err)
 
-	yoloNode, err := gorgonia.YoloDetector(inputN, fanchors64, l.masks, l.inputSize, l.classesNum, float64(0.5), target)
+	yoloNode, yoloTrainer, err := gorgonia.YoloDetector(inputN, fanchors64, l.masks, l.inputSize, l.classesNum, float64(0.5))
+	l.yoloTrainer = yoloTrainer
 	//END TEST
 	//yoloNode, err := gorgonia.YoloDetector(inputN, fanchors64, l.masks, l.inputSize, l.classesNum, float64(l.ignoreThresh))
 	if err != nil {
