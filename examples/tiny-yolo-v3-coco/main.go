@@ -71,23 +71,22 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 10000; i++ {
 		if err := tm.RunAll(); err != nil {
 			fmt.Printf("Can't run tape machine due the error: %s\n", err.Error())
 			return
 		}
-		t := model.out[0].Value().(tensor.Tensor)
-		fmt.Println(t, costl.Value())
+		fmt.Println(costl.Value())
+		fmt.Println("===========================================================")
 		err = solver.Step(gorgonia.NodesToValueGrads(model.learningNodes))
 		if err != nil {
 
 			fmt.Println(err)
 		}
 
-		ff.Write([]byte(fmt.Sprint(cost.Value(), "\n")))
+		ff.Write([]byte(fmt.Sprint(costl.Value(), "\n")))
 		tm.Reset()
 	}
-
 	fmt.Println("Feedforwarded in:", time.Since(st))
 	return
 	if cfg == "./data/yolov3-tiny.cfg" {
