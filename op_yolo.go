@@ -407,15 +407,47 @@ func (op *yoloDiffOp) Do(inputs ...Value) (Value, error) {
 	// @todo
 	return nil, nil
 }
-func (op *yoloDiffOp) f32(inGradData, outGradData []float32) {
-	// @todo
+func (op *yoloDiffOp) f32(inGradData, outGradData, scales, inputs, targets, bboxes []float32) {
+	for i := range inGradData {
+		inGradData[i] = 0
+	}
+	for i := 0; i < len(outGradData); i = i + 5 + op.numClasses {
+		for j := 0; j < 4; j++ {
+			inGradData[i+j] = outGradData[i+j] * (scales[i+j] * scales[i+j] * (inputs[i+j] - targets[i+j]))
+		}
+		for j := 4; j < 5+op.numClasses; j++ {
+			if outGradData[i+j] != 0 {
+				if targets[i+j] == 0 {
+					inGradData[i+j] = outGradData[i+j] * (bboxes[i+j])
+				} else {
+					inGradData[i+j] = outGradData[i+j] * (1 - bboxes[i+j])
+				}
+			}
+		}
+	}
 }
-func (op *yoloDiffOp) f64(inGradData, outGradData []float64) {
-	// @todo
+func (op *yoloDiffOp) f64(inGradData, outGradData, scales, inputs, targets, bboxes []float64) {
+	for i := range inGradData {
+		inGradData[i] = 0
+	}
+	for i := 0; i < len(outGradData); i = i + 5 + op.numClasses {
+		for j := 0; j < 4; j++ {
+			inGradData[i+j] = outGradData[i+j] * (scales[i+j] * scales[i+j] * (inputs[i+j] - targets[i+j]))
+		}
+		for j := 4; j < 5+op.numClasses; j++ {
+			if outGradData[i+j] != 0 {
+				if targets[i+j] == 0 {
+					inGradData[i+j] = outGradData[i+j] * (bboxes[i+j])
+				} else {
+					inGradData[i+j] = outGradData[i+j] * (1 - bboxes[i+j])
+				}
+			}
+		}
+	}
 }
 
 func (op *yoloOp) DoDiff(ctx ExecutionContext, inputs Nodes, output *Node) (err error) {
-	return fmt.Errorf("DoDiff for yoloDiffOp is not implemented")
+	return fmt.Errorf("DoDiff for yoloOp is not implemented")
 }
 
 // func (op *yoloOp) DiffWRT(inputs int) []bool { return []bool{true} }
