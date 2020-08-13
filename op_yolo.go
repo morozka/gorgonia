@@ -202,41 +202,7 @@ func convertToFloat32(in []float64) []float32 {
 }
 
 func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
-	if !op.train {
-		in, _ := op.checkInput(inputs...)
-		batch := in.Shape()[0]
-		stride := int(op.inpDim / in.Shape()[2])
-		grid := in.Shape()[2]
-		bboxAttrs := 5 + op.numClasses
-		numAnchors := len(op.mask)
-		currentAnchors := []float64{}
-		for _, i := range op.mask {
-			if i >= (len(op.anchors) / 2) {
-				return nil, errors.New("Incorrect mask for anchors on yolo layer with name" + fmt.Sprint(op.mask))
-			}
-			currentAnchors = append(currentAnchors, op.anchors[i*2], op.anchors[i*2+1])
-		}
-		err = in.Reshape(batch, bboxAttrs*numAnchors, grid*grid)
-		if err != nil {
-			return nil, errors.Wrap(err, "Can't make reshape grid^2 for YOLO v3")
-		}
-
-		err = in.T(0, 2, 1)
-		if err != nil {
-			return nil, errors.Wrap(err, "Can't safely transponse input for YOLO v3")
-		}
-		err = in.Transpose()
-		if err != nil {
-			return nil, errors.Wrap(err, "Can't transponse input for YOLO v3")
-		}
-		err = in.Reshape(batch, grid*grid*numAnchors, bboxAttrs)
-		if err != nil {
-			return nil, errors.Wrap(err, "Can't reshape bbox for YOLO v3")
-		}
-		return op.yoloDoer(in, batch, stride, grid, bboxAttrs, numAnchors, currentAnchors)
-	}
 	in, _ := op.checkInput(inputs...)
-	//inv, _ := in.Slice(nil, S(0, in.Shape()[1]-1), nil, nil)
 	batch := in.Shape()[0]
 	stride := int(op.inpDim / in.Shape()[2])
 	grid := in.Shape()[2]
@@ -250,55 +216,33 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 		currentAnchors = append(currentAnchors, op.anchors[i*2], op.anchors[i*2+1])
 	}
 
-	err = in.Reshape(batch, bboxAttrs*numAnchors, grid*grid)
-	if err != nil {
+	if err = in.Reshape(batch, bboxAttrs*numAnchors, grid*grid); err != nil {
 		return nil, errors.Wrap(err, "Can't make reshape grid^2 for YOLO v3")
 	}
 
-	err = in.T(0, 2, 1)
-	if err != nil {
+	if err = in.T(0, 2, 1); err != nil {
 		return nil, errors.Wrap(err, "Can't safely transponse input for YOLO v3")
 	}
-	err = in.Transpose()
-	if err != nil {
+	if err = in.Transpose(); err != nil {
 		return nil, errors.Wrap(err, "Can't transponse input for YOLO v3")
 	}
-	err = in.Reshape(batch, grid*grid*numAnchors, bboxAttrs)
-	if err != nil {
+	if err = in.Reshape(batch, grid*grid*numAnchors, bboxAttrs); err != nil {
 		return nil, errors.Wrap(err, "Can't reshape bbox for YOLO v3")
 	}
+	if !op.train {
+		return op.yoloDoer(in, batch, stride, grid, bboxAttrs, numAnchors, currentAnchors)
+	}
+
 	rin := in.Clone().(tensor.Tensor)
 	outyolo, _ := op.yoloDoer(rin, batch, stride, grid, bboxAttrs, numAnchors, currentAnchors)
 	fmt.Println("YoloInput: ", in)
 	fmt.Println("YoloOutput: ", rin)
-	yboxes32 := make([]float32, 0)
-	input32 := make([]float32, 0)
-	switch outyolo.Dtype() {
-	case Float32:
-		in.Reshape(in.Shape()[0] * in.Shape()[1] * in.Shape()[2])
-		outyolo.Reshape(outyolo.Shape()[0] * outyolo.Shape()[1] * outyolo.Shape()[2])
-		for i := 0; i < outyolo.Shape()[0]; i++ {
-			buf, _ := outyolo.At(i)
-			yboxes32 = append(yboxes32, buf.(float32))
-			buf, _ = in.At(i)
-			input32 = append(input32, buf.(float32))
-		}
-		break
-	case Float64:
-		in.Reshape(in.Shape()[0] * in.Shape()[1] * in.Shape()[2])
-		outyolo.Reshape(outyolo.Shape()[0] * outyolo.Shape()[1] * outyolo.Shape()[2])
-		for i := 0; i < outyolo.Shape()[0]; i++ {
-			buf, _ := outyolo.At(i)
-			yboxes32 = append(yboxes32, float32(buf.(float64)))
-			buf, _ = in.At(i)
-			input32 = append(input32, float32(buf.(float64)))
-		}
-		break
-	default:
-		panic("Unsupportable type for Yolo")
+	if op.inputRT, err = op.convertTensorToFloat32(in); err != nil {
+		return nil, err
 	}
-	op.inputRT = input32
-	op.yoloRT = yboxes32
+	if op.yoloRT, err = op.convertTensorToFloat32(outyolo); err != nil {
+		return nil, err
+	}
 	res := op.prepRT()
 	switch outyolo.Dtype() {
 	case Float32:
@@ -315,6 +259,23 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	default:
 		panic("Unsupportable type for Yolo")
 	}
+}
+func (op *yoloOp) convertTensorToFloat32(in tensor.Tensor) (input32 []float32, err error) {
+	input32 = make([]float32, 0)
+	in.Reshape(in.Shape().TotalSize())
+	for i := 0; i < in.Shape()[0]; i++ {
+		var buf interface{}
+		buf, err = in.At(i)
+		switch in.Dtype() {
+		case Float32:
+			input32 = append(input32, buf.(float32))
+		case Float64:
+			input32 = append(input32, float32(buf.(float64)))
+		default:
+			err = errors.New("Unsupportable type for Yolo")
+		}
+	}
+	return input32, err
 }
 
 func (op *yoloOp) DiffWRT(inputs int) []bool { return []bool{true} }
@@ -567,7 +528,6 @@ func min(a, b int) int {
 	return b
 }
 
-//with min value of log=-35
 func bceLoss(target, pred float32) float32 {
 	if target == 1.0 {
 		buf := -float32(math.Log(float64(pred) + 1e-16))
@@ -631,49 +591,12 @@ func (op *yoloOpDiff) Do(inputs ...Value) (Value, error) {
 	switch in.Dtype() {
 	case tensor.Float32:
 		inGradData := inGrad.Data().([]float32)
-		outValueData := output.Data().([]float32)
-		for i := range inGradData {
-			inGradData[i] = 0
-		}
-		for i := 0; i < len(outValueData); i = i + 5 + op.numClasses {
-			for j := 0; j < 4; j++ {
-
-				inGradData[i+j] = outValueData[i+j] * op.YOP.scaleRT[i+j] * op.YOP.scaleRT[i+j] * (op.YOP.inputRT[i+j] - op.YOP.targetRT[i+j])
-			}
-			for j := 4; j < 5+op.numClasses; j++ {
-				if outValueData[i+j] != 0 {
-					if op.YOP.targetRT[i+j] == 0 {
-						inGradData[i+j] = outValueData[i+j] * op.YOP.yoloRT[i+j]
-					} else {
-						inGradData[i+j] = outValueData[i+j] * (1 - op.YOP.yoloRT[i+j])
-					}
-				}
-			}
-
-		}
+		outGradData := output.Data().([]float32)
+		op.f32(inGradData, outGradData)
 	case tensor.Float64:
 		inGradData := inGrad.Data().([]float64)
-		outValueData := output.Data().([]float64)
-		for i := range inGradData {
-			inGradData[i] = 0
-		}
-		for i := 0; i < len(outValueData); i = i + 5 + op.numClasses {
-			for j := 0; j < 4; j++ {
-
-				inGradData[i+j] = outValueData[i+j] * float64(op.YOP.scaleRT[i+j]*op.YOP.scaleRT[i+j]*(op.YOP.inputRT[i+j]-op.YOP.targetRT[i+j]))
-			}
-			for j := 4; j < 5+op.numClasses; j++ {
-				if outValueData[i+j] != 0 {
-					if op.YOP.targetRT[i+j] == 0 {
-						inGradData[i+j] = outValueData[i+j] * float64(op.YOP.yoloRT[i+j])
-					} else {
-						inGradData[i+j] = outValueData[i+j] * float64((1 - op.YOP.yoloRT[i+j]))
-					}
-				}
-			}
-
-		}
-
+		outGradData := output.Data().([]float64)
+		op.f64(inGradData, outGradData)
 	}
 
 	inGrad.Reshape(1, op.gridSize*op.gridSize, (op.numClasses+5)*len(op.mask))
@@ -681,4 +604,46 @@ func (op *yoloOpDiff) Do(inputs ...Value) (Value, error) {
 	inGrad.Transpose()
 	inGrad.Reshape(1, len(op.mask)*(5+op.numClasses), op.gridSize, op.gridSize)
 	return inGrad, nil
+}
+func (op *yoloOpDiff) f32(inGradData, outGradData []float32) {
+	for i := range inGradData {
+		inGradData[i] = 0
+	}
+	for i := 0; i < len(outGradData); i = i + 5 + op.numClasses {
+		for j := 0; j < 4; j++ {
+
+			inGradData[i+j] = outGradData[i+j] * op.YOP.scaleRT[i+j] * op.YOP.scaleRT[i+j] * (op.YOP.inputRT[i+j] - op.YOP.targetRT[i+j])
+		}
+		for j := 4; j < 5+op.numClasses; j++ {
+			if outGradData[i+j] != 0 {
+				if op.YOP.targetRT[i+j] == 0 {
+					inGradData[i+j] = outGradData[i+j] * op.YOP.yoloRT[i+j]
+				} else {
+					inGradData[i+j] = outGradData[i+j] * (1 - op.YOP.yoloRT[i+j])
+				}
+			}
+		}
+
+	}
+}
+func (op *yoloOpDiff) f64(inGradData, outGradData []float64) {
+	for i := range inGradData {
+		inGradData[i] = 0
+	}
+	for i := 0; i < len(outGradData); i = i + 5 + op.numClasses {
+		for j := 0; j < 4; j++ {
+
+			inGradData[i+j] = outGradData[i+j] * float64(op.YOP.scaleRT[i+j]*op.YOP.scaleRT[i+j]*(op.YOP.inputRT[i+j]-op.YOP.targetRT[i+j]))
+		}
+		for j := 4; j < 5+op.numClasses; j++ {
+			if outGradData[i+j] != 0 {
+				if op.YOP.targetRT[i+j] == 0 {
+					inGradData[i+j] = outGradData[i+j] * float64(op.YOP.yoloRT[i+j])
+				} else {
+					inGradData[i+j] = outGradData[i+j] * float64((1 - op.YOP.yoloRT[i+j]))
+				}
+			}
+		}
+
+	}
 }
