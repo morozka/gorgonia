@@ -19,7 +19,7 @@ type YoloTrainer struct {
 }
 
 func (yt *YoloTrainer) SetTarget(target []float32) {
-	yt.yop.targetRT = target
+	yt.yop.targetInput = target
 }
 func (yt *YoloTrainer) StartTraining() {
 	yt.yop.train = true
@@ -29,6 +29,7 @@ func (yt *YoloTrainer) StopTraining() {
 }
 
 type yoloOp struct {
+	targetInput []float32
 	scaleRT     []float32
 	targetRT    []float32
 	inputRT     []float32
@@ -261,7 +262,7 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	}
 	op.inputRT = input32
 	op.yoloRT = yboxes32
-	res := op.prepRT(input32, yboxes32, op.targetRT, grid)
+	res := op.prepRT(input32, yboxes32, op.targetInput, grid)
 	switch outyolo.Dtype() {
 	case Float32:
 		resten := tensor.New(tensor.WithShape(1, grid*grid*len(op.mask), 5+op.numClasses), tensor.Of(tensor.Float32), tensor.WithBacking(res))
