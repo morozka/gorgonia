@@ -130,28 +130,34 @@ func expSlice(v tensor.View) error {
 }
 
 func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
+	inputTensor, err := op.checkInput(inputs...)
+	if err != nil {
+		return nil, errors.Wrap(err, "Can't check YOLO input")
+	}
+	batchSize := inputTensor.Shape()[0]
+	stride := op.dimensions / inputTensor.Shape()[2]
+	gridSize := inputTensor.Shape()[2]
+	bboxAttributes := 5 + op.numClasses
+	numAnchors := len(op.anchors) / 2
+	currentAnchors := []float32{}
+	for i := range op.masks {
+		if op.masks[i] >= numAnchors {
+			return nil, fmt.Errorf("Incorrect mask %v for anchors in YOLO layer", op.masks)
+		}
+		currentAnchors = append(currentAnchors, op.anchors[i*2], op.anchors[i*2+1])
+	}
+
 	// Just inference without backpropagation
 	if !op.trainMode {
-		inputTensor, err := op.checkInput(inputs...)
-		if err != nil {
-			return nil, errors.Wrap(err, "Can't check YOLO input")
-		}
-		batchSize := inputTensor.Shape()[0]
-		stride := op.dimensions / inputTensor.Shape()[2]
-		gridSize := inputTensor.Shape()[2]
-		bboxAttributes := 5 + op.numClasses
-		numAnchors := len(op.anchors) / 2
-		currentAnchors := []float32{}
-		for i := range op.masks {
-			if op.masks[i] >= numAnchors {
-				return nil, fmt.Errorf("Incorrect mask %v for anchors in YOLO layer", op.masks)
-			}
-			currentAnchors = append(currentAnchors, op.anchors[i*2], op.anchors[i*2+1])
-		}
 		return op.evaluateYOLO_f32(inputTensor, batchSize, stride, gridSize, bboxAttributes, len(op.masks), currentAnchors)
 	}
 
 	// Training mode
+	inputTensorCopy := inputTensor.Clone().(tensor.Tensor)
+	_, err = op.evaluateYOLO_f32(inputTensorCopy, batchSize, stride, gridSize, bboxAttributes, len(op.masks), currentAnchors)
+	if err != nil {
+		return nil, errors.Wrap(err, "Can't evaluate YOLO [Training mode]")
+	}
 	// @todo
 
 	return nil, nil
