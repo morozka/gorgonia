@@ -19,12 +19,14 @@ type yoloOp struct {
 	dimensions  int
 	numClasses  int
 	trainMode   bool
+	gridSize    int
 }
 
-func newYoloOp(anchors []float32, masks []int, netSize, numClasses int, ignoreTresh float32) *yoloOp {
+func newYoloOp(anchors []float32, masks []int, netSize, gridSize, numClasses int, ignoreTresh float32) *yoloOp {
 	yoloOp := &yoloOp{
 		anchors:     anchors,
 		dimensions:  netSize,
+		gridSize:    gridSize,
 		numClasses:  numClasses,
 		ignoreTresh: ignoreTresh,
 		masks:       masks,
@@ -35,7 +37,7 @@ func newYoloOp(anchors []float32, masks []int, netSize, numClasses int, ignoreTr
 
 // YOLOv3 https://arxiv.org/abs/1804.02767
 func YOLOv3(input *Node, anchors []float32, masks []int, netSize, numClasses int, ignoreTresh float32, targets ...*Node) (*Node, error) {
-	op := newYoloOp(anchors, masks, netSize, numClasses, ignoreTresh)
+	op := newYoloOp(anchors, masks, netSize, input.Shape()[2], numClasses, ignoreTresh)
 	return ApplyOp(op, input)
 }
 
