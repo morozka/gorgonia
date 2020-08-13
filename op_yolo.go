@@ -21,42 +21,21 @@ type yoloOp struct {
 	trainMode   bool
 }
 
-func newYoloOp(anchors []float32, masks []int, netSize, numClasses int, ignoreTresh float32, trainMode bool) *yoloOp {
+func newYoloOp(anchors []float32, masks []int, netSize, numClasses int, ignoreTresh float32) *yoloOp {
 	yoloOp := &yoloOp{
 		anchors:     anchors,
 		dimensions:  netSize,
 		numClasses:  numClasses,
 		ignoreTresh: ignoreTresh,
 		masks:       masks,
-		trainMode:   trainMode,
+		trainMode:   false,
 	}
 	return yoloOp
 }
 
 // YOLOv3 https://arxiv.org/abs/1804.02767
 func YOLOv3(input *Node, anchors []float32, masks []int, netSize, numClasses int, ignoreTresh float32, targets ...*Node) (*Node, error) {
-	if len(targets) > 0 {
-		inputSlice, err := Slice(input, S(0), nil, nil, nil)
-		if err != nil {
-			return nil, errors.Wrap(err, "Can't prepare YOLOv3 node for training mode due Slice() on input node error")
-		}
-		targetsSlice, err := Slice(targets[0], S(0), nil, nil, nil)
-		if err != nil {
-			return nil, errors.Wrap(err, "Can't prepare YOLOv3 node for training mode due Slice() on first node in target nodes slice error")
-		}
-		inputTargetConcat, err := Concat(0, inputSlice, targetsSlice)
-		if err != nil {
-			return nil, errors.Wrap(err, "Can't prepare YOLOv3 node for training mode due Concat() error")
-		}
-		concatShp := inputTargetConcat.Shape()
-		inputTargetConcat, err = Reshape(inputTargetConcat, []int{1, concatShp[0], concatShp[1], concatShp[2]})
-		if err != nil {
-			return nil, errors.Wrap(err, "Can't prepare YOLOv3 node for training mode due Reshape() error")
-		}
-		op := newYoloOp(anchors, masks, netSize, numClasses, ignoreTresh, true)
-		return ApplyOp(op, inputTargetConcat)
-	}
-	op := newYoloOp(anchors, masks, netSize, numClasses, ignoreTresh, false)
+	op := newYoloOp(anchors, masks, netSize, numClasses, ignoreTresh)
 	return ApplyOp(op, input)
 }
 
@@ -149,6 +128,7 @@ func expSlice(v tensor.View) error {
 }
 
 func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
+	// Just inference without backpropagation
 	if !op.trainMode {
 		inputTensor, err := op.checkInput(inputs...)
 		if err != nil {
@@ -170,125 +150,9 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	}
 
 	// Training mode
-	input, err := op.checkInput(inputs...)
-	if err != nil {
-		return nil, errors.Wrap(err, "Can't check YOLO input [Training mode]")
-	}
-	inv, err := input.Slice(nil, S(0, input.Shape()[1]-1), nil, nil)
-	if err != nil {
-		return nil, errors.Wrap(err, "Can't prepare slice in YOLO (1) [Training mode]")
-	}
-	numTargets, err := input.At(0, input.Shape()[1]-1, 0, 0)
-	if err != nil {
-		return nil, errors.Wrap(err, "Can't select targets from YOLO input [Training mode]")
-	}
+	// @todo
 
-	batchSize := input.Shape()[0]
-	stride := op.dimensions / input.Shape()[2]
-	grid := input.Shape()[2]
-	bboxAttributes := 5 + op.numClasses
-	numAnchors := len(op.masks)
-	currentAnchors := []float32{}
-	for i := range op.masks {
-		if op.masks[i] >= (len(op.anchors) / 2) {
-			return nil, fmt.Errorf("Incorrect mask %v for anchors in YOLO layer [Training mode]", op.masks)
-		}
-		currentAnchors = append(currentAnchors, op.anchors[i*2], op.anchors[i*2+1])
-	}
-
-	targets := []float32{}
-	inputNumericType := input.Dtype()
-
-	switch inputNumericType {
-	case Float32:
-		lt := int(numTargets.(float32))
-		targets = make([]float32, lt)
-		for i := 1; i <= lt; i++ {
-			valAt, err := input.At(0, input.Shape()[1]-1, i/grid, i%grid)
-			if err != nil {
-				return nil, fmt.Errorf("Can't select float32 targets for YOLO [Training mode]")
-			}
-			targets[i-1] = valAt.(float32)
-		}
-		break
-	case Float64:
-		lt := int(numTargets.(float64))
-		targets = make([]float32, lt)
-		for i := 1; i <= lt; i++ {
-			valAt, err := input.At(0, input.Shape()[1]-1, i/grid, i%grid)
-			if err != nil {
-				return nil, fmt.Errorf("Can't select float64 targets for YOLO [Training mode]")
-			}
-			targets[i-1] = float32(valAt.(float64))
-		}
-		break
-	default:
-		return nil, fmt.Errorf("Unsupported numeric type while preparing targets for YOLO Please use float64 or float32 [Training mode]")
-	}
-
-	input = inv.Materialize()
-
-	err = input.Reshape(batchSize, bboxAttributes*numAnchors, grid*grid)
-	if err != nil {
-		return nil, errors.Wrap(err, "Can't reshape in YOLO (1) [Training mode]")
-	}
-	err = input.T(0, 2, 1)
-	if err != nil {
-		return nil, errors.Wrap(err, "Can't safely transponse in YOLO (1) [Training mode]")
-	}
-	err = input.Transpose()
-	if err != nil {
-		return nil, errors.Wrap(err, "Can't transponse in YOLO (1) [Training mode]")
-	}
-	err = input.Reshape(batchSize, grid*grid*numAnchors, bboxAttributes)
-	if err != nil {
-		return nil, errors.Wrap(err, "Can't reshape in YOLO (2) [Training mode]")
-	}
-
-	clonedInput := input.Clone().(tensor.Tensor)
-	outyolo, err := op.evaluateYOLO_f32(input, batchSize, stride, grid, bboxAttributes, numAnchors, currentAnchors)
-	if err != nil {
-		return nil, errors.Wrap(err, "Can't evaluate YOLO operation [Training mode]")
-	}
-
-	yoloNumericType := outyolo.Dtype()
-	result := &tensor.Dense{}
-
-	switch yoloNumericType {
-	case Float32:
-		yoloBBoxesF32 := make([]float32, 0)
-		inputF32 := make([]float32, 0)
-		err = clonedInput.Reshape(input.Shape()[0] * input.Shape()[1] * input.Shape()[2])
-		if err != nil {
-			return nil, errors.Wrap(err, "Can't reshape in YOLO (3) [Training mode]")
-		}
-		err = outyolo.Reshape(outyolo.Shape()[0] * outyolo.Shape()[1] * outyolo.Shape()[2])
-		if err != nil {
-			return nil, errors.Wrap(err, "Can't reshape in YOLO (3) [Training mode]")
-		}
-		for i := 0; i < outyolo.Shape()[0]; i++ {
-			buf, err := outyolo.At(i)
-			if err != nil {
-				return nil, errors.Wrap(err, "Can't select value from YOLO output [Training mode]")
-			}
-			yoloBBoxesF32 = append(yoloBBoxesF32, buf.(float32))
-			buf, err = clonedInput.At(i)
-			if err != nil {
-				return nil, errors.Wrap(err, "Can't select value from YOLO bounding boxes [Training mode]")
-			}
-			inputF32 = append(inputF32, buf.(float32))
-		}
-		preparedOut := prepareOutputYOLO_f32(inputF32, yoloBBoxesF32, targets, op.anchors, op.masks, op.numClasses, op.dimensions, grid, op.ignoreTresh)
-		result = tensor.New(tensor.WithShape(1, grid*grid*len(op.masks), 5+op.numClasses), tensor.Of(tensor.Float32), tensor.WithBacking(preparedOut))
-		break
-	case Float64:
-		// @todo
-		return nil, fmt.Errorf("float64 numeric type is not implemented for preparing result for YOLO [Training mode]")
-	default:
-		return nil, fmt.Errorf("Unsupported numeric type for preparing result for YOLO. Please use float64 or float32 [Training mode]")
-	}
-
-	return result, nil
+	return nil, nil
 }
 
 func (op *yoloOp) evaluateYOLO_f32(input tensor.Tensor, batchSize, stride, grid, bboxAttrs, numAnchors int, currentAnchors []float32) (retVal tensor.Tensor, err error) {
