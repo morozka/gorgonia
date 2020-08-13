@@ -238,10 +238,10 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	fmt.Println("YoloInput: ", in)
 	fmt.Println("YoloOutput: ", rin)
 	if op.inputRT, err = op.convertTensorToFloat32(in); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "Can't convert input to []float32 for YOLO v3")
 	}
 	if op.yoloRT, err = op.convertTensorToFloat32(outyolo); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "Can't convert output to []float32 for YOLO v3")
 	}
 	res := op.prepRT()
 	switch outyolo.Dtype() {
