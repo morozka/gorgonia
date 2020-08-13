@@ -488,7 +488,7 @@ func (op *yoloOp) prepRT(input, yoloBoxes, target []float32, gridSize int) []flo
 	bestIous := op.prepBestIous(yoloBoxes, target)
 	for i := 0; i < len(yoloBoxes); i = i + (5 + op.numClasses) {
 		if bestIous[i/(5+op.numClasses)][0] <= float32(op.ignoreTresh) {
-			//rt[i+4] = bceLoss(0, yoloBoxes[i+4])
+			rt[i+4] = bceLoss(0, yoloBoxes[i+4])
 		}
 	}
 	for i := 0; i < len(bestAnchors); i++ {
