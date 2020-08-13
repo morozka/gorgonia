@@ -383,3 +383,56 @@ func mseLoss32(target, pred, scale float32) float32 {
 func invsigm32(target float32) float32 {
 	return -math32.Log(1-target+1e-16) + math32.Log(target+1e-16)
 }
+
+type yoloDiffOp struct {
+	yoloOp
+}
+
+func (op *yoloDiffOp) Arity() int { return 2 }
+func (op *yoloDiffOp) Type() hm.Type {
+	a := hm.TypeVariable('a')
+	t := newTensorType(4, a)
+	o := newTensorType(3, a)
+	return hm.NewFnType(t, o, t)
+}
+
+func (op *yoloDiffOp) ReturnsPtr() bool     { return true }
+func (op *yoloDiffOp) CallsExtern() bool    { return false }
+func (op *yoloDiffOp) OverwritesInput() int { return -1 }
+func (op *yoloDiffOp) InferShape(inputs ...DimSizer) (tensor.Shape, error) {
+	s := inputs[0].(tensor.Shape).Clone()
+	return s, nil
+}
+func (op *yoloDiffOp) Do(inputs ...Value) (Value, error) {
+	// @todo
+	return nil, nil
+}
+func (op *yoloDiffOp) f32(inGradData, outGradData []float32) {
+	// @todo
+}
+func (op *yoloDiffOp) f64(inGradData, outGradData []float64) {
+	// @todo
+}
+
+func (op *yoloOp) DoDiff(ctx ExecutionContext, inputs Nodes, output *Node) (err error) {
+	return fmt.Errorf("DoDiff for yoloDiffOp is not implemented")
+}
+
+// func (op *yoloOp) DiffWRT(inputs int) []bool { return []bool{true} }
+
+// func (op *yoloOp) SymDiff(inputs Nodes, output, grad *Node) (retVal Nodes, err error) {
+// 	if err = checkArity(op, len(inputs)); err != nil {
+// 		return
+// 	}
+// 	in := inputs[0]
+// 	var op2 yoloOp
+// 	op2 = *op
+// 	diff := &yoloOpDiff{yoloOp: op2, YOP: op}
+
+// 	var ret *Node
+// 	if ret, err = ApplyOp(diff, in, grad); err != nil {
+// 		return nil, err
+// 	}
+// 	return Nodes{ret}, nil
+
+// }
