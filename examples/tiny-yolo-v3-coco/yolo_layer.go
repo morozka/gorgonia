@@ -15,7 +15,7 @@ type yoloLayer struct {
 	inputSize      int
 	classesNum     int
 	ignoreThresh   float32
-	yoloTrainer    *gorgonia.YoloTrainer
+	yoloTrainer    gorgonia.YoloTrainer
 }
 
 func (l *yoloLayer) String() string {

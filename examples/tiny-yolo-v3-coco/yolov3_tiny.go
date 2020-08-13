@@ -18,7 +18,7 @@ type YOLOv3 struct {
 	classesNum, boxesPerCell int
 	out                      []*gorgonia.Node
 	learningNodes            []*gorgonia.Node
-	yoloTrainers             []*gorgonia.YoloTrainer
+	yoloTrainers             []gorgonia.YoloTrainer
 }
 
 func (net *YOLOv3) ActivateTrainingMode() error {
@@ -84,7 +84,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 
 	yoloNodes := []*gorgonia.Node{}
 	learningNodes := []*gorgonia.Node{}
-	yoloTrainers := []*gorgonia.YoloTrainer{}
+	yoloTrainers := []gorgonia.YoloTrainer{}
 	for i := range blocks {
 		block := blocks[i]
 		filtersIdx := 0
