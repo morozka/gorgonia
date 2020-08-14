@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"hash"
 	"image"
-	"math"
 
 	"github.com/chewxy/hm"
 	"github.com/chewxy/math32"
@@ -93,42 +92,6 @@ func (op *yoloOp) checkInput(inputs ...Value) (tensor.Tensor, error) {
 	return in, nil
 }
 
-func sigmoidSlice(v tensor.View) error {
-	switch v.Dtype() {
-	case Float32:
-		_, err := v.Apply(_sigmoidf32, tensor.UseUnsafe())
-		if err != nil {
-			return errors.Wrap(err, "Can't apply _sigmoidf32 as activation function to YOLO operation")
-		}
-	case Float64:
-		_, err := v.Apply(_sigmoidf64, tensor.UseUnsafe())
-		if err != nil {
-			return errors.Wrap(err, "Can't apply _sigmoidf64 as activation function to YOLO operation")
-		}
-	default:
-		return fmt.Errorf("Unsupported numeric type for YOLO sigmoid function. Please use float64 or float32")
-	}
-	return nil
-}
-
-func expSlice(v tensor.View) error {
-	switch v.Dtype() {
-	case Float32:
-		_, err := v.Apply(math32.Exp, tensor.UseUnsafe())
-		if err != nil {
-			return errors.Wrap(err, "Can't apply exp32 to YOLO operation")
-		}
-	case Float64:
-		_, err := v.Apply(math.Exp, tensor.UseUnsafe())
-		if err != nil {
-			return errors.Wrap(err, "Can't apply exp64 to YOLO operation")
-		}
-	default:
-		return fmt.Errorf("Unsupported numeric type for YOLO for exp function. Please use float64 or float32")
-	}
-	return nil
-}
-
 func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	inputTensor, err := op.checkInput(inputs...)
 	if err != nil {
@@ -190,14 +153,15 @@ func (op *yoloOp) evaluateYOLO_f32(input tensor.Tensor, batchSize, stride, grid,
 
 	// Activation of x, y, and objects via sigmoid function
 	slXY, err := input.Slice(nil, nil, S(0, 2))
-	err = sigmoidSlice(slXY)
+	_, err = slXY.Apply(_sigmoidf32, tensor.UseUnsafe())
 	if err != nil {
-		return nil, errors.Wrap(err, "Can't activate XY")
+		return nil, errors.Wrap(err, "Can't activate XY due _sigmoidf32 error")
 	}
+
 	slClasses, err := input.Slice(nil, nil, S(4, 5+op.numClasses))
-	err = sigmoidSlice(slClasses)
+	_, err = slClasses.Apply(_sigmoidf32, tensor.UseUnsafe())
 	if err != nil {
-		return nil, errors.Wrap(err, "Can't activate classes")
+		return nil, errors.Wrap(err, "Can't activate classes due _sigmoidf32 error")
 	}
 
 	step := grid * numAnchors
@@ -231,7 +195,7 @@ func (op *yoloOp) evaluateYOLO_f32(input tensor.Tensor, batchSize, stride, grid,
 		anchors = append(anchors, currentAnchors...)
 	}
 
-	anchorsTensor := tensor.New(tensor.Of(inputNumericType), tensor.WithShape(1, grid*grid*numAnchors, 2))
+	anchorsTensor := tensor.New(tensor.Of(Float32), tensor.WithShape(1, grid*grid*numAnchors, 2))
 	for i := range anchors {
 		anchorsTensor.Set(i, anchors[i])
 	}
@@ -502,5 +466,4 @@ func (op *yoloOp) SymDiff(inputs Nodes, output, grad *Node) (retVal Nodes, err e
 		return nil, err
 	}
 	return Nodes{ret}, nil
-
 }
