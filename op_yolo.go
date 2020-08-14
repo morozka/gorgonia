@@ -110,19 +110,35 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 		currentAnchors = append(currentAnchors, op.anchors[i*2], op.anchors[i*2+1])
 	}
 
+	inputNumericType := inputTensor.Dtype()
+
 	// Just inference without backpropagation
 	if !op.trainMode {
-		return op.evaluateYOLO_f32(inputTensor, batchSize, stride, gridSize, bboxAttributes, len(op.masks), currentAnchors)
+		switch inputNumericType {
+		case Float32:
+			return op.evaluateYOLO_f32(inputTensor, batchSize, stride, gridSize, bboxAttributes, len(op.masks), currentAnchors)
+		case Float64:
+			return nil, fmt.Errorf("Float64 not handled yet")
+		default:
+			return nil, fmt.Errorf("yoloOp supports only Float32/Float64 types")
+		}
 	}
 
 	// Training mode
 	inputTensorCopy := inputTensor.Clone().(tensor.Tensor)
-	_, err = op.evaluateYOLO_f32(inputTensorCopy, batchSize, stride, gridSize, bboxAttributes, len(op.masks), currentAnchors)
-	if err != nil {
-		return nil, errors.Wrap(err, "Can't evaluate YOLO [Training mode]")
+	switch inputNumericType {
+	case Float32:
+		_, err = op.evaluateYOLO_f32(inputTensorCopy, batchSize, stride, gridSize, bboxAttributes, len(op.masks), currentAnchors)
+		if err != nil {
+			return nil, errors.Wrap(err, "Can't evaluate YOLO [Training mode]")
+		}
+	case Float64:
+		return nil, fmt.Errorf("Float64 not handled yet [Training mode]")
+	default:
+		return nil, fmt.Errorf("yoloOp supports only Float32/Float64 types [Training mode]")
 	}
-	// @todo
 
+	// @todo
 	return nil, nil
 }
 
