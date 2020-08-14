@@ -486,21 +486,21 @@ func (op *yoloOp) DoDiff(ctx ExecutionContext, inputs Nodes, output *Node) (err 
 	return fmt.Errorf("DoDiff for yoloOp is not implemented")
 }
 
-// func (op *yoloOp) DiffWRT(inputs int) []bool { return []bool{true} }
+func (op *yoloOp) DiffWRT(inputs int) []bool { return []bool{true} }
 
-// func (op *yoloOp) SymDiff(inputs Nodes, output, grad *Node) (retVal Nodes, err error) {
-// 	if err = checkArity(op, len(inputs)); err != nil {
-// 		return
-// 	}
-// 	in := inputs[0]
-// 	var op2 yoloOp
-// 	op2 = *op
-// 	diff := &yoloOpDiff{yoloOp: op2, YOP: op}
+func (op *yoloOp) SymDiff(inputs Nodes, output, grad *Node) (retVal Nodes, err error) {
+	if err = checkArity(op, len(inputs)); err != nil {
+		return
+	}
+	in := inputs[0]
+	var op2 yoloOp
+	op2 = *op
+	diff := &yoloDiffOp{op2}
 
-// 	var ret *Node
-// 	if ret, err = ApplyOp(diff, in, grad); err != nil {
-// 		return nil, err
-// 	}
-// 	return Nodes{ret}, nil
+	var ret *Node
+	if ret, err = ApplyOp(diff, in, grad); err != nil {
+		return nil, err
+	}
+	return Nodes{ret}, nil
 
-// }
+}
