@@ -404,9 +404,45 @@ func (op *yoloDiffOp) InferShape(inputs ...DimSizer) (tensor.Shape, error) {
 	return s, nil
 }
 func (op *yoloDiffOp) Do(inputs ...Value) (Value, error) {
-	// @todo
-	return nil, nil
+	in := inputs[0]
+	output := inputs[1]
+	inGrad := tensor.New(tensor.Of(in.Dtype()), tensor.WithShape(output.Shape().Clone()...), tensor.WithEngine(in.(tensor.Tensor).Engine()))
+	switch in.Dtype() {
+	case tensor.Float32:
+		inGradData := inGrad.Data().([]float32)
+		outGradData := output.Data().([]float32)
+		// @todo: op.f32(inGradData, outGradData, scales, inputs, targets, bboxes)
+		_, _ = inGradData, outGradData // @todo remove
+		break
+	case tensor.Float64:
+		inGradData := inGrad.Data().([]float64)
+		outGradData := output.Data().([]float64)
+		// @todo: op.f64(inGradData, outGradData, scales, inputs, targets, bboxes)
+		_, _ = inGradData, outGradData // @todo remove
+		break
+	default:
+		return nil, fmt.Errorf("yoloDiffOp supports only Float32/Float64 types")
+	}
+
+	err := inGrad.Reshape(1, op.gridSize*op.gridSize, (op.numClasses+5)*len(op.masks))
+	if err != nil {
+		return nil, errors.Wrap(err, "Can't reshape in yoloDiffOp (1)")
+	}
+	err = inGrad.T(0, 2, 1)
+	if err != nil {
+		return nil, errors.Wrap(err, "Can't safely transponse in yoloDiffOp (1)")
+	}
+	err = inGrad.Transpose()
+	if err != nil {
+		return nil, errors.Wrap(err, "Can't transponse in yoloDiffOp (1)")
+	}
+	err = inGrad.Reshape(1, len(op.masks)*(5+op.numClasses), op.gridSize, op.gridSize)
+	if err != nil {
+		return nil, errors.Wrap(err, "Can't reshape in yoloDiffOp (2)")
+	}
+	return inGrad, nil
 }
+
 func (op *yoloDiffOp) f32(inGradData, outGradData, scales, inputs, targets, bboxes []float32) {
 	for i := range inGradData {
 		inGradData[i] = 0
