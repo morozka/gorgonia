@@ -104,7 +104,6 @@ func parseFolder(dir string) ([][]float32, error) {
 		return nil, err
 	}
 
-	numFiles := 0
 	targets := [][]float32{}
 	for i := range filesInfo {
 		sliceOfF32 := []float32{}
@@ -131,12 +130,11 @@ func parseFolder(dir string) ([][]float32, error) {
 			}
 			sliceOfF32 = append(sliceOfF32, float32(entityF32))
 		}
-		numFiles++
 		targets = append(targets, sliceOfF32)
 	}
 
-	if numFiles == 0 {
-		return nil, fmt.Errorf("Folder '%s' doen't contain any *.txt files (annotation files for YOLO)", dir)
+	if len(targets) == 0 {
+		return nil, fmt.Errorf("Folder '%s' doesn't contain any *.txt files (annotation files for YOLO)", dir)
 	}
 
 	return targets, nil
