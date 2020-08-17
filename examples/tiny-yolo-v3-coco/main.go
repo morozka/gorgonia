@@ -3,6 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	G "gorgonia.org/gorgonia"
@@ -25,7 +29,7 @@ func main() {
 	imagePathStr := flag.String("image", "./data/dog_416x416.jpg", "Path to image file for 'detector' mode")
 	weightsPath := flag.String("weights", "./data/yolov3-tiny.weights", "Path to weights file")
 	cfgPathStr := flag.String("cfg", "./data/yolov3-tiny.cfg", "Path to net configuration file")
-	trainingFolder := flag.String("train", "./data", "Path to folder with labeled data")
+	trainingFolder := flag.String("train", "./data/test_yolo_op", "Path to folder with labeled data")
 	flag.Parse()
 
 	switch *modeStr {
@@ -79,12 +83,61 @@ func main() {
 
 		tm.Reset()
 		return
-	case "trainig":
+	case "training":
 		// @todo
-		_ = trainingFolder
+		labeledData, err := parseFolder(*trainingFolder)
+		if err != nil {
+			fmt.Println("Can't prepare labeled data due the error: %s", err.Error())
+			return
+		}
+		_ = labeledData
 		return
 	default:
 		// Can't reach this code because of default value for modeStr.
 		return
 	}
+}
+
+func parseFolder(dir string) ([][]float32, error) {
+	filesInfo, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	numFiles := 0
+	targets := [][]float32{}
+	for i := range filesInfo {
+		sliceOfF32 := []float32{}
+		fileInfo := filesInfo[i]
+		// Parse only *.txt files
+		if fileInfo.IsDir() || filepath.Ext(fileInfo.Name()) != ".txt" {
+			continue
+		}
+		filePath := fmt.Sprintf("%s/%s", dir, fileInfo.Name())
+		fileBytes, err := ioutil.ReadFile(filePath)
+		if err != nil {
+			return nil, err
+		}
+		fileContentAsArray := strings.Split(strings.ReplaceAll(string(fileBytes), "\n", " "), " ")
+		for j := range fileContentAsArray {
+			entity := fileContentAsArray[j]
+			if entity == "" {
+				continue
+			}
+			entityF32, err := strconv.ParseFloat(entity, 32)
+			if err != nil {
+				// Do we need return? May be just some warning...
+				return nil, err
+			}
+			sliceOfF32 = append(sliceOfF32, float32(entityF32))
+		}
+		numFiles++
+		targets = append(targets, sliceOfF32)
+	}
+
+	if numFiles == 0 {
+		return nil, fmt.Errorf("Folder '%s' doen't contain any *.txt files (annotation files for YOLO)", dir)
+	}
+
+	return targets, nil
 }

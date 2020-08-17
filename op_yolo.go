@@ -175,6 +175,7 @@ func (op *yoloOp) evaluateYOLO_f32(input tensor.Tensor, batchSize, stride, grid,
 	}
 
 	slClasses, err := input.Slice(nil, nil, S(4, 5+op.numClasses))
+
 	_, err = slClasses.Apply(_sigmoidf32, tensor.UseUnsafe())
 	if err != nil {
 		return nil, errors.Wrap(err, "Can't activate classes due _sigmoidf32 error")
