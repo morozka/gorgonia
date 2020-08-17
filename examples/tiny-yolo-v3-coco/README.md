@@ -60,9 +60,27 @@ Route - [route](route_layer.go)
 YOLO - [op_yolo](../../op_yolo.go)
 
 ## Run example
-How to run:
+Available flags 
 ```go
-go run .
+go run . -h
+```
+```shell
+  -cfg string
+        Path to net configuration file (default "./data/yolov3-tiny.cfg")
+  -image string
+        Path to image file for 'detector' mode (default "./data/dog_416x416.jpg")
+  -mode string
+        Choose the mode: detector/training (default "detector")
+  -train string
+        Path to folder with labeled data (default "./data")
+  -weights string
+        Path to weights file (default "./data/yolov3-tiny.weights")
+```
+
+
+How to run "detector" mode:
+```go
+go run . --mode=detector --image=PATH_TO_IMAGE_FILE --cfg=PATH_TO_DARKNET_CONFIGURATION_FILE --weights=PATH_TO_DARKNET_WEIGHTS_FILE
 ```
 
 What you can expect to see:
