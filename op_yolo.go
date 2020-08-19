@@ -17,6 +17,16 @@ type YoloTrainer struct {
 	op *yoloOp
 }
 
+// ActivateTrainingMode Activates training mode for yoloOP
+func (yt *YoloTrainer) ActivateTrainingMode() {
+	yt.op.trainMode = true
+}
+
+// DisableTrainingMode Disables training mode for yoloOP
+func (yt *YoloTrainer) DisableTrainingMode() {
+	yt.op.trainMode = true
+}
+
 // SetTarget sets []float32 as desired target for yoloOP
 func (yt *YoloTrainer) SetTarget(target []float32) {
 	preparedNumOfElements := yt.op.gridSize * yt.op.gridSize * len(yt.op.masks) * (5 + yt.op.numClasses)
