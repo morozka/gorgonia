@@ -120,3 +120,26 @@ func (op *upsampleOp) Do(inputs ...Value) (retVal Value, err error) {
 
 	return out, nil
 }
+
+func (op *upsampleOp) DiffWRT(inputs int) []bool { return []bool{true} }
+
+func (op *upsampleOp) SymDiff(inputs Nodes, output, grad *Node) (retVal Nodes, err error) {
+	if err = checkArity(op, len(inputs)); err != nil {
+		return
+	}
+	input := inputs[0]
+
+	var op2 upsampleOp
+	op2 = *op
+	diff := &upsampleDiffOp{op2}
+
+	var ret *Node
+	if ret, err = ApplyOp(diff, input, output, grad); err != nil {
+		return nil, err
+	}
+	return Nodes{ret}, nil
+}
+
+type upsampleDiffOp struct {
+	upsampleOp
+}
