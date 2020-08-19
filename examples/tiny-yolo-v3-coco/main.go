@@ -91,6 +91,7 @@ func main() {
 			fmt.Printf("Can't prepare labeled data due the error: %s\n", err.Error())
 			return
 		}
+
 		err = model.SetTarget(labeledData[0])
 		if err != nil {
 			fmt.Printf("Can't set []float32 as target due the error: %s\n", err.Error())
@@ -110,6 +111,10 @@ func main() {
 		solver := gorgonia.NewRMSPropSolver(gorgonia.WithLearnRate(0.00001))
 		modelOut := model.GetOutput()
 		concatOut, err := gorgonia.Concat(1, modelOut...)
+		if err != nil {
+			fmt.Printf("Can't concatenate YOLO layers outputs in Training mode due the error: %s\n", err.Error())
+			return
+		}
 		costs, err := gorgonia.Sum(concatOut, 0, 1, 2)
 		if err != nil {
 			fmt.Printf("Can't evaluate costs in Training mode due the error: %s\n", err.Error())
