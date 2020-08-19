@@ -18,6 +18,8 @@ type YOLOv3 struct {
 	classesNum, boxesPerCell, netSize int
 	out                               []*gorgonia.Node
 	layersInfo                        []string
+
+	training []*gorgonia.YoloTrainer
 }
 
 // Print Print architecture of network

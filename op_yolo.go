@@ -11,6 +11,10 @@ import (
 	"gorgonia.org/tensor"
 )
 
+type YoloTrainer struct {
+	yoloOP *yoloOp
+}
+
 type yoloOp struct {
 	anchors     []float32
 	masks       []int
