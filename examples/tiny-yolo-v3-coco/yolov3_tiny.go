@@ -29,6 +29,18 @@ func (net *YOLOv3) Print() {
 	}
 }
 
+// SetTarget Set desired target for net's output
+func (net *YOLOv3) SetTarget(target []float32) error {
+	if len(net.training) == 0 {
+		return fmt.Errorf("Model has not any YOLO layers")
+	}
+	for _, j := range net.training {
+		// @todo Fill training data
+		_ = j
+	}
+	return nil
+}
+
 // GetOutput Get out YOLO layers (can be multiple of them)
 func (net *YOLOv3) GetOutput() []*gorgonia.Node {
 	return net.out
