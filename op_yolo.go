@@ -19,6 +19,15 @@ type yoloOp struct {
 	numClasses  int
 	trainMode   bool
 	gridSize    int
+
+	training *yoloTraining
+}
+
+type yoloTraining struct {
+	inputs  []float32
+	bboxes  []float32
+	scales  []float32
+	targets []float32
 }
 
 func newYoloOp(anchors []float32, masks []int, netSize, gridSize, numClasses int, ignoreTresh float32) *yoloOp {
