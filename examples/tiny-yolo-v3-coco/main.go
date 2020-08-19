@@ -91,8 +91,16 @@ func main() {
 			fmt.Printf("Can't prepare labeled data due the error: %s\n", err.Error())
 			return
 		}
-		model.SetTarget(labeledData[0])
-		model.ActivateTrainingMode()
+		err = model.SetTarget(labeledData[0])
+		if err != nil {
+			fmt.Printf("Can't set []float32 as target due the error: %s\n", err.Error())
+			return
+		}
+		err = model.ActivateTrainingMode()
+		if err != nil {
+			fmt.Printf("Can't activate training mode due the error: %s\n", err.Error())
+			return
+		}
 		imgf32, err := GetFloat32Image(*imagePathStr, imgHeight, imgWidth)
 		if err != nil {
 			fmt.Printf("Can't read []float32 from image due the error: %s\n", err.Error())

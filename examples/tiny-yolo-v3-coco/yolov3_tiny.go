@@ -105,7 +105,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 
 	yoloNodes := []*gorgonia.Node{}
 	learningNodes := []*gorgonia.Node{}
-
+	yoloTrainers := []*gorgonia.YoloTrainer{}
 	for i := range blocks {
 		block := blocks[i]
 		filtersIdx := 0
@@ -380,14 +380,17 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				if !ok {
 					fmt.Printf("Warning: can't cast 'ignore_thresh' to float32 for YOLO layer")
 				}
-				var l layerN = &yoloLayer{
+				yoloL := yoloLayer{
 					masks:          masks,
 					anchors:        selectedAnchors,
 					flattenAnchors: flatten,
 					inputSize:      inputS[2],
 					classesNum:     classesNumber,
 					ignoreThresh:   float32(ignoreThresh64),
+					yoloTrainer:    &gorgonia.YoloTrainer{},
 				}
+
+				var l layerN = &yoloL
 				yoloBlock, err := l.ToNode(g, input)
 				if err != nil {
 					fmt.Printf("\tError preparing YOLO block: %s\n", err.Error())
@@ -397,6 +400,9 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 
 				layers = append(layers, &l)
 				yoloNodes = append(yoloNodes, yoloBlock)
+
+				yoloTrainers = append(yoloTrainers, yoloL.yoloTrainer)
+
 				filtersIdx = prevFilters
 				break
 			case "maxpool":
@@ -455,6 +461,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 		netSize:       netWidth,
 		out:           yoloNodes,
 		learningNodes: learningNodes,
+		training:      yoloTrainers,
 		layersInfo:    linfo,
 	}
 
