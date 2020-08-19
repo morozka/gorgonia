@@ -10,10 +10,11 @@ import (
 type yoloLayer struct {
 	masks          []int
 	anchors        [][2]int
-	flattenAhcnors []int
+	flattenAnchors []int
 	inputSize      int
 	classesNum     int
 	ignoreThresh   float32
+	yoloTrainer    *gorgonia.YoloTrainer
 }
 
 func (l *yoloLayer) String() string {
@@ -36,13 +37,15 @@ func (l *yoloLayer) ToNode(g *gorgonia.ExprGraph, input ...*gorgonia.Node) (*gor
 	if len(inputN.Shape()) == 0 {
 		return nil, fmt.Errorf("Input shape for YOLO layer is nil")
 	}
-	fanchors64 := make([]float64, len(l.flattenAhcnors))
-	for i := range fanchors64 {
-		fanchors64[i] = float64(l.flattenAhcnors[i])
+	flattenAnchorsF32 := make([]float32, len(l.flattenAnchors))
+	for i := range flattenAnchorsF32 {
+		flattenAnchorsF32[i] = float32(l.flattenAnchors[i])
 	}
-	//TEST ONLY
-	fanchors64 = append(fanchors64, fanchors64...)
-	yoloNode, err := gorgonia.YoloDetector(inputN, fanchors64, l.masks, l.inputSize, l.classesNum, float64(l.ignoreThresh))
+	masksIdx := make([]int, len(l.masks))
+	for i := range l.masks {
+		masksIdx[i] = i
+	}
+	yoloNode, err := gorgonia.YOLOv3(inputN, flattenAnchorsF32, masksIdx, l.inputSize, l.classesNum, l.ignoreThresh)
 	if err != nil {
 		return nil, errors.Wrap(err, "Can't prepare YOLOv3 operation")
 	}

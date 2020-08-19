@@ -9,14 +9,15 @@ import (
 )
 
 type convLayer struct {
-	filters        int
-	padding        int
-	kernelSize     int
-	stride         int
-	activation     string
-	batchNormalize int
-	bias           bool
-	biases         []float32
+	filters            int
+	padding            int
+	kernelSize         int
+	stride             int
+	activation         string
+	activationReLUCoef float64
+	batchNormalize     int
+	bias               bool
+	biases             []float32
 
 	layerIndex int
 
@@ -44,13 +45,13 @@ func (l *convLayer) ToNode(g *gorgonia.ExprGraph, input ...*gorgonia.Node) (*gor
 
 	shp := convOut.Shape()
 	iters := shp.TotalSize() / len(l.biases)
-	newArr := []float32{}
+	dataF32 := []float32{}
 	for b := 0; b < len(l.biases); b++ {
 		for j := 0; j < iters; j++ {
-			newArr = append(newArr, l.biases[b])
+			dataF32 = append(dataF32, l.biases[b])
 		}
 	}
-	biasTensor := tensor.New(tensor.WithBacking(newArr), tensor.WithShape(shp...))
+	biasTensor := tensor.New(tensor.WithBacking(dataF32), tensor.WithShape(shp...))
 	l.biasNode = gorgonia.NewTensor(g, tensor.Float32, 4, gorgonia.WithShape(shp...), gorgonia.WithName(fmt.Sprintf("bias_%d", l.layerIndex)), gorgonia.WithValue(biasTensor))
 
 	biasOut, err := gorgonia.Add(convOut, l.biasNode)
@@ -59,7 +60,7 @@ func (l *convLayer) ToNode(g *gorgonia.ExprGraph, input ...*gorgonia.Node) (*gor
 	}
 
 	if l.activation == "leaky" {
-		activationOut, err := gorgonia.LeakyRelu(biasOut, 0.1)
+		activationOut, err := gorgonia.LeakyRelu(biasOut, l.activationReLUCoef)
 		if err != nil {
 			return &gorgonia.Node{}, errors.Wrap(err, "Can't prepare activation operation")
 		}

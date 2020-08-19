@@ -14,9 +14,53 @@ import (
 
 // YOLOv3 YOLOv3 architecture
 type YOLOv3 struct {
-	g                        *gorgonia.ExprGraph
-	classesNum, boxesPerCell int
-	out                      []*gorgonia.Node
+	g                                 *gorgonia.ExprGraph
+	classesNum, boxesPerCell, netSize int
+	out                               []*gorgonia.Node
+	layersInfo                        []string
+
+	learningNodes []*gorgonia.Node
+	training      []*gorgonia.YoloTrainer
+}
+
+// Print Print architecture of network
+func (net *YOLOv3) Print() {
+	for i := range net.layersInfo {
+		fmt.Println(net.layersInfo[i])
+	}
+}
+
+// SetTarget Set desired target for net's output
+func (net *YOLOv3) SetTarget(target []float32) error {
+	if len(net.training) == 0 {
+		return fmt.Errorf("Model has not any YOLO layers")
+	}
+	for i := range net.training {
+		net.training[i].SetTarget(target)
+	}
+	return nil
+}
+
+// ActivateTrainingMode Activates training mode for unexported yoloOP
+func (net *YOLOv3) ActivateTrainingMode() error {
+	if len(net.training) == 0 {
+		return fmt.Errorf("Model doesn't contain any YOLO layer to activate training mode")
+	}
+	for i := range net.training {
+		net.training[i].ActivateTrainingMode()
+	}
+	return nil
+}
+
+// DisableTrainingMode Disables training mode for unexported yoloOP
+func (net *YOLOv3) DisableTrainingMode() error {
+	if len(net.training) == 0 {
+		return fmt.Errorf("Model doesn't contain any YOLO layer to disable training mode")
+	}
+	for i := range net.training {
+		net.training[i].DisableTrainingMode()
+	}
+	return nil
 }
 
 // GetOutput Get out YOLO layers (can be multiple of them)
@@ -36,6 +80,13 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 		return nil, errors.Wrap(err, "Can't read darknet configuration")
 	}
 
+	netParams := buildingBlocks[0]
+	netWidthStr := netParams["width"]
+	netWidth, err := strconv.Atoi(netWidthStr)
+	if err != nil {
+		return nil, errors.Wrap(err, fmt.Sprintf("Network's width must be integer, got value: '%s'", netWidthStr))
+	}
+
 	weightsData, err := ParseWeights(weightsFile)
 	if err != nil {
 		return nil, errors.Wrap(err, "Can't read darknet weights")
@@ -53,6 +104,8 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 	epsilon := float32(0.000001)
 
 	yoloNodes := []*gorgonia.Node{}
+	learningNodes := []*gorgonia.Node{}
+	yoloTrainers := []*gorgonia.YoloTrainer{}
 	for i := range blocks {
 		block := blocks[i]
 		filtersIdx := 0
@@ -108,13 +161,14 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				}
 
 				ll := &convLayer{
-					filters:        filters,
-					padding:        pad,
-					kernelSize:     kernelSize,
-					stride:         stride,
-					activation:     activation,
-					batchNormalize: batchNormalize,
-					bias:           bias,
+					filters:            filters,
+					padding:            pad,
+					kernelSize:         kernelSize,
+					stride:             stride,
+					activation:         activation,
+					activationReLUCoef: leakyCoef,
+					batchNormalize:     batchNormalize,
+					bias:               bias,
 				}
 
 				shp := tensor.Shape{filters, prevFilters, kernelSize, kernelSize}
@@ -174,6 +228,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				input = convBlock
 
 				layers = append(layers, &l)
+				learningNodes = append(learningNodes, ll.convNode)
 
 				filtersIdx = filters
 				break
@@ -325,14 +380,17 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 				if !ok {
 					fmt.Printf("Warning: can't cast 'ignore_thresh' to float32 for YOLO layer")
 				}
-				var l layerN = &yoloLayer{
+				yoloL := yoloLayer{
 					masks:          masks,
 					anchors:        selectedAnchors,
-					flattenAhcnors: flatten,
+					flattenAnchors: flatten,
 					inputSize:      inputS[2],
 					classesNum:     classesNumber,
 					ignoreThresh:   float32(ignoreThresh64),
+					yoloTrainer:    &gorgonia.YoloTrainer{},
 				}
+
+				var l layerN = &yoloL
 				yoloBlock, err := l.ToNode(g, input)
 				if err != nil {
 					fmt.Printf("\tError preparing YOLO block: %s\n", err.Error())
@@ -342,6 +400,9 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 
 				layers = append(layers, &l)
 				yoloNodes = append(yoloNodes, yoloBlock)
+
+				yoloTrainers = append(yoloTrainers, yoloL.yoloTrainer)
+
 				filtersIdx = prevFilters
 				break
 			case "maxpool":
@@ -389,13 +450,20 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 	}
 
 	// Pretty print
+	linfo := []string{}
 	for i := range layers {
-		fmt.Println(*layers[i])
+		linfo = append(linfo, fmt.Sprintf("%v", *layers[i]))
 	}
 
-	return &YOLOv3{
-		classesNum:   classesNumber,
-		boxesPerCell: boxesPerCell,
-		out:          yoloNodes,
-	}, nil
+	model := &YOLOv3{
+		classesNum:    classesNumber,
+		boxesPerCell:  boxesPerCell,
+		netSize:       netWidth,
+		out:           yoloNodes,
+		learningNodes: learningNodes,
+		training:      yoloTrainers,
+		layersInfo:    linfo,
+	}
+
+	return model, nil
 }
