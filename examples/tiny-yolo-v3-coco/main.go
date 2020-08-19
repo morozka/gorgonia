@@ -100,7 +100,9 @@ func main() {
 		}
 
 		solver := gorgonia.NewRMSPropSolver(gorgonia.WithLearnRate(0.00001))
-		costs, err := gorgonia.Sum(model.out[0], 0, 1, 2)
+		modelOut := model.GetOutput()
+		concatOut, err := gorgonia.Concat(1, modelOut...)
+		costs, err := gorgonia.Sum(concatOut, 0, 1, 2)
 		if err != nil {
 			fmt.Printf("Can't evaluate costs in Training mode due the error: %s\n", err.Error())
 			return
