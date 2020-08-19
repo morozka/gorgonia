@@ -34,9 +34,8 @@ func (net *YOLOv3) SetTarget(target []float32) error {
 	if len(net.training) == 0 {
 		return fmt.Errorf("Model has not any YOLO layers")
 	}
-	for _, j := range net.training {
-		// @todo Fill training data
-		_ = j
+	for i := range net.training {
+		net.training[i].SetTarget(target)
 	}
 	return nil
 }

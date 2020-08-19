@@ -11,8 +11,15 @@ import (
 	"gorgonia.org/tensor"
 )
 
+// YoloTrainer Wrapper around yoloOP
+// It has method for setting desired bboxes as output of network
 type YoloTrainer struct {
 	yoloOP *yoloOp
+}
+
+// SetTarget sets []float32 as desired target for yoloOP
+func (yolo_trainer *YoloTrainer) SetTarget(target []float32) {
+	// @todo
 }
 
 type yoloOp struct {
