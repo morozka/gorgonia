@@ -24,7 +24,7 @@ func (yt *YoloTrainer) ActivateTrainingMode() {
 
 // DisableTrainingMode Disables training mode for yoloOP
 func (yt *YoloTrainer) DisableTrainingMode() {
-	yt.op.trainMode = true
+	yt.op.trainMode = false
 }
 
 // SetTarget sets []float32 as desired target for yoloOP
