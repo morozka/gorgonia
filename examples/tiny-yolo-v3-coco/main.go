@@ -50,8 +50,8 @@ func main() {
 		fmt.Printf("Can't let input = []float32 due the error: %s\n", err.Error())
 		return
 	}
-
-	cost := gorgonia.Must(gorgonia.Sum(model.out[0], 0, 1, 2))
+	fullout := gorgonia.Must(gorgonia.Concat(1, model.out[0], model.out[1]))
+	cost := gorgonia.Must(gorgonia.Sum(fullout, 0, 1, 2))
 	_, err = gorgonia.Grad(cost, model.learningNodes...)
 	if err != nil {
 		panic(err)

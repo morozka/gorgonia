@@ -199,7 +199,7 @@ func (op *upsampleDiffOp) Do(inputs ...Value) (retVal Value, err error) {
 					summ := 0.
 					for sh := 0; sh <= op.stride; sh++ {
 						for sw := 0; sw <= op.stride; sw++ {
-							val, err := pooledGrad.At(bi, ci, hi+sh, wi+sw)
+							val, err := pooledGrad.At(bi, ci, hi*(op.stride+1)+sh, wi*(op.stride+1)+sw) //!
 							if err != nil {
 								return nil, errors.Errorf("Error accessing input data at [%v, %v, %v, %v]", bi, ci, hi, wi)
 							}
