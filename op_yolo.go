@@ -216,7 +216,7 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	}
 	op.training.bboxes, err = convertTensorToFloat32(yoloBBoxes)
 	if err != nil {
-		return nil, errors.Wrap(err, "Can't cast tensor to []float32 for inputs [Training mode]")
+		return nil, errors.Wrap(err, "Can't cast tensor to []float32 for bboxes [Training mode]")
 	}
 
 	// @todo
