@@ -40,6 +40,28 @@ func (net *YOLOv3) SetTarget(target []float32) error {
 	return nil
 }
 
+// ActivateTrainingMode Activates training mode for unexported yoloOP
+func (net *YOLOv3) ActivateTrainingMode() error {
+	if len(net.training) == 0 {
+		return fmt.Errorf("Model doesn't contain any YOLO layer to activate training mode")
+	}
+	for i := range net.training {
+		net.training[i].ActivateTrainingMode()
+	}
+	return nil
+}
+
+// DisableTrainingMode Disables training mode for unexported yoloOP
+func (net *YOLOv3) DisableTrainingMode() error {
+	if len(net.training) == 0 {
+		return fmt.Errorf("Model doesn't contain any YOLO layer to disable training mode")
+	}
+	for i := range net.training {
+		net.training[i].DisableTrainingMode()
+	}
+	return nil
+}
+
 // GetOutput Get out YOLO layers (can be multiple of them)
 func (net *YOLOv3) GetOutput() []*gorgonia.Node {
 	return net.out

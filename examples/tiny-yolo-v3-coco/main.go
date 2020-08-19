@@ -32,17 +32,17 @@ func main() {
 	trainingFolder := flag.String("train", "./data/test_yolo_op", "Path to folder with labeled data")
 	flag.Parse()
 
+	g := G.NewGraph()
+	input := G.NewTensor(g, tensor.Float32, 4, G.WithShape(1, channels, imgWidth, imgHeight), G.WithName("input"))
+	model, err := NewYoloV3Tiny(g, input, len(cocoClasses), boxes, leakyCoef, *cfgPathStr, *weightsPath)
+	if err != nil {
+		fmt.Printf("Can't prepare YOLOv3 network due the error: %s\n", err.Error())
+		return
+	}
+	model.Print()
+
 	switch *modeStr {
 	case "detector":
-		g := G.NewGraph()
-
-		input := G.NewTensor(g, tensor.Float32, 4, G.WithShape(1, channels, imgWidth, imgHeight), G.WithName("input"))
-		model, err := NewYoloV3Tiny(g, input, len(cocoClasses), boxes, leakyCoef, *cfgPathStr, *weightsPath)
-		if err != nil {
-			fmt.Printf("Can't prepare YOLOv3 network due the error: %s\n", err.Error())
-			return
-		}
-		model.Print()
 
 		imgf32, err := GetFloat32Image(*imagePathStr, imgHeight, imgWidth)
 		if err != nil {
@@ -87,10 +87,11 @@ func main() {
 		// @todo
 		labeledData, err := parseFolder(*trainingFolder)
 		if err != nil {
-			fmt.Println("Can't prepare labeled data due the error: %s", err.Error())
+			fmt.Printf("Can't prepare labeled data due the error: %s\n", err.Error())
 			return
 		}
-		_ = labeledData
+		model.SetTarget(labeledData[0])
+		model.ActivateTrainingMode()
 		return
 	default:
 		// Can't reach this code because of default value for modeStr.

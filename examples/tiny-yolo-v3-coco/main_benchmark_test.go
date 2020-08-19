@@ -15,7 +15,7 @@ func BenchmarkSample(b *testing.B) {
 	g := G.NewGraph()
 
 	input := gorgonia.NewTensor(g, tensor.Float32, 4, gorgonia.WithShape(1, channels, imgWidth, imgHeight), gorgonia.WithName("input"))
-	model, err := NewYoloV3Tiny(g, input, len(cocoClasses), boxes, leakyCoef, cfg, weights)
+	model, err := NewYoloV3Tiny(g, input, len(cocoClasses), boxes, leakyCoef, "./data/yolov3-tiny.cfg", "./data/yolov3-tiny.weights")
 	if err != nil {
 		fmt.Printf("Can't prepare YOLOv3 network due the error: %s\n", err.Error())
 		return
