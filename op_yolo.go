@@ -194,9 +194,10 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 
 	// Training mode
 	inputTensorCopy := inputTensor.Clone().(tensor.Tensor)
+	var yoloBBoxes tensor.Tensor
 	switch inputNumericType {
 	case Float32:
-		_, err = op.evaluateYOLO_f32(inputTensorCopy, batchSize, stride, gridSize, bboxAttributes, len(op.masks), currentAnchors)
+		yoloBBoxes, err = op.evaluateYOLO_f32(inputTensorCopy, batchSize, stride, gridSize, bboxAttributes, len(op.masks), currentAnchors)
 		if err != nil {
 			return nil, errors.Wrap(err, "Can't evaluate YOLO [Training mode]")
 		}
@@ -206,8 +207,40 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 		return nil, fmt.Errorf("yoloOp supports only Float32/Float64 types [Training mode]")
 	}
 
+	if op.training == nil {
+		op.training = &yoloTraining{}
+	}
+	op.training.inputs, err = convertTensorToFloat32(inputTensor)
+	if err != nil {
+		return nil, errors.Wrap(err, "Can't cast tensor to []float32 for inputs [Training mode]")
+	}
+	op.training.bboxes, err = convertTensorToFloat32(yoloBBoxes)
+	if err != nil {
+		return nil, errors.Wrap(err, "Can't cast tensor to []float32 for inputs [Training mode]")
+	}
+
 	// @todo
 	return nil, nil
+}
+
+func convertTensorToFloat32(in tensor.Tensor) (input32 []float32, err error) {
+	input32 = make([]float32, 0)
+	in.Reshape(in.Shape().TotalSize())
+	for i := 0; i < in.Shape()[0]; i++ {
+		var buf interface{}
+		buf, err = in.At(i)
+		switch in.Dtype() {
+		case Float32:
+			input32 = append(input32, buf.(float32))
+			break
+		case Float64:
+			input32 = append(input32, float32(buf.(float64)))
+			break
+		default:
+			return nil, fmt.Errorf("convertTensorToFloat32() supports only Float32/Float64 types of tensor")
+		}
+	}
+	return input32, nil
 }
 
 func (op *yoloOp) evaluateYOLO_f32(input tensor.Tensor, batchSize, stride, grid, bboxAttrs, numAnchors int, currentAnchors []float32) (retVal tensor.Tensor, err error) {
