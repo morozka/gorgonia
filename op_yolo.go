@@ -395,6 +395,22 @@ func (op *yoloDiffOp) InferShape(inputs ...DimSizer) (tensor.Shape, error) {
 	return s, nil
 }
 func (op *yoloDiffOp) Do(inputs ...Value) (Value, error) {
+	if op.training == nil {
+		return nil, fmt.Errorf("Training parameters for yoloOp were not set")
+	}
+	if op.training.inputs == nil {
+		return nil, fmt.Errorf("Training parameter 'inputs' for yoloOp were not set")
+	}
+	if op.training.scales == nil {
+		return nil, fmt.Errorf("Training parameter 'scales' for yoloOp were not set")
+	}
+	if op.training.targets == nil {
+		return nil, fmt.Errorf("Training parameter 'targets' for yoloOp were not set")
+	}
+	if op.training.bboxes == nil {
+		return nil, fmt.Errorf("Training parameter 'bboxes' for yoloOp were not set")
+	}
+
 	in := inputs[0]
 	output := inputs[1]
 	inGrad := tensor.New(tensor.Of(in.Dtype()), tensor.WithShape(output.Shape().Clone()...), tensor.WithEngine(in.(tensor.Tensor).Engine()))
