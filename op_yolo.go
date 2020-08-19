@@ -402,15 +402,10 @@ func (op *yoloDiffOp) Do(inputs ...Value) (Value, error) {
 	case tensor.Float32:
 		inGradData := inGrad.Data().([]float32)
 		outGradData := output.Data().([]float32)
-		// @todo: op.f32(inGradData, outGradData, scales, inputs, targets, bboxes)
-		_, _ = inGradData, outGradData // @todo remove
+		op.f32(inGradData, outGradData, op.training.scales, op.training.inputs, op.training.targets, op.training.bboxes)
 		break
 	case tensor.Float64:
-		inGradData := inGrad.Data().([]float64)
-		outGradData := output.Data().([]float64)
-		// @todo: op.f64(inGradData, outGradData, scales, inputs, targets, bboxes)
-		_, _ = inGradData, outGradData // @todo remove
-		break
+		return nil, fmt.Errorf("yoloDiffOp for Float64 is not implemented yet")
 	default:
 		return nil, fmt.Errorf("yoloDiffOp supports only Float32/Float64 types")
 	}
