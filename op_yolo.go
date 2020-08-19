@@ -39,6 +39,7 @@ func newYoloOp(anchors []float32, masks []int, netSize, gridSize, numClasses int
 		ignoreTresh: ignoreTresh,
 		masks:       masks,
 		trainMode:   false,
+		training:    &yoloTraining{},
 	}
 	return yoloOp
 }
