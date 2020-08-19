@@ -4,13 +4,11 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	"gorgonia.org/gorgonia"
 	G "gorgonia.org/gorgonia"
 	"gorgonia.org/tensor"
 )
@@ -34,23 +32,6 @@ func main() {
 	trainingFolder := flag.String("train", "./data/test_yolo_op", "Path to folder with labeled data")
 	flag.Parse()
 
-	g := gorgonia.NewGraph()
-	t1 := gorgonia.NewTensor(g, gorgonia.Float32, 4, gorgonia.WithShape(1, 1, 4, 4), gorgonia.WithName("tens_1"), gorgonia.WithInit(gorgonia.RangedFrom(0)))
-	t2 := gorgonia.NewTensor(g, gorgonia.Float32, 4, gorgonia.WithShape(1, 1, 4, 4), gorgonia.WithName("tens_2"), gorgonia.WithInit(gorgonia.RangedFrom(0)))
-
-	tt, err := gorgonia.Concat(1, t1, t2)
-	if err != nil {
-		log.Println("error here", err)
-	}
-	m := gorgonia.NewTapeMachine(g)
-	err = m.RunAll()
-	if err != nil {
-		log.Println("error here 2", err)
-	}
-	fmt.Println(tt.Value())
-	fmt.Println(tt.Shape())
-
-	return
 	switch *modeStr {
 	case "detector":
 		g := G.NewGraph()
