@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"gorgonia.org/gorgonia"
 	G "gorgonia.org/gorgonia"
 	"gorgonia.org/tensor"
 )
@@ -92,6 +93,61 @@ func main() {
 		}
 		model.SetTarget(labeledData[0])
 		model.ActivateTrainingMode()
+		imgf32, err := GetFloat32Image(*imagePathStr, imgHeight, imgWidth)
+		if err != nil {
+			fmt.Printf("Can't read []float32 from image due the error: %s\n", err.Error())
+			return
+		}
+
+		solver := gorgonia.NewRMSPropSolver(gorgonia.WithLearnRate(0.00001))
+		costs, err := gorgonia.Sum(model.out[0], 0, 1, 2)
+		if err != nil {
+			fmt.Printf("Can't evaluate costs in Training mode due the error: %s\n", err.Error())
+			return
+		}
+		_, err = gorgonia.Grad(costs, model.learningNodes...)
+		if err != nil {
+			fmt.Printf("Can't evaluate gradients in Training mode due the error: %s\n", err.Error())
+			return
+		}
+		prog, locMap, err := gorgonia.Compile(g)
+		if err != nil {
+			fmt.Printf("Can't compile graph in Training mode due the error: %s\n", err.Error())
+			return
+		}
+
+		tm := G.NewTapeMachine(g, gorgonia.WithPrecompiled(prog, locMap), gorgonia.BindDualValues(model.learningNodes...))
+		defer tm.Close()
+
+		for i := 0; i < 4000; i++ {
+			image := tensor.New(tensor.WithShape(1, channels, imgHeight, imgWidth), tensor.Of(tensor.Float32), tensor.WithBacking(imgf32))
+			err = G.Let(input, image)
+			if err != nil {
+				fmt.Printf("Can't let input = []float32 due the error: %s\n", err.Error())
+				return
+			}
+			st := time.Now()
+			if err := tm.RunAll(); err != nil {
+				fmt.Printf("Can't run tape machine due the error: %s\n", err.Error())
+				return
+			}
+			if i == 15 {
+				solver = gorgonia.NewRMSPropSolver(gorgonia.WithLearnRate(0.000001))
+			}
+			if i == 150 {
+				solver = gorgonia.NewRMSPropSolver(gorgonia.WithLearnRate(0.0000001))
+			}
+			fmt.Printf("Training iteration #%d done in: %v\n", i, time.Since(st))
+			fmt.Printf("\tCurrent costs are: %v\n", costs.Value())
+
+			err = solver.Step(gorgonia.NodesToValueGrads(model.learningNodes))
+			if err != nil {
+				fmt.Printf("Can't do solver.Step() in Training mode due the error: %s\n", err.Error())
+			}
+
+			tm.Reset()
+		}
+
 		return
 	default:
 		// Can't reach this code because of default value for modeStr.
