@@ -219,8 +219,24 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 		return nil, errors.Wrap(err, "Can't cast tensor to []float32 for bboxes [Training mode]")
 	}
 
-	// @todo
-	return nil, nil
+	preparedYOLOout := prepareOutputYOLO_f32(
+		op.training.inputs, op.training.bboxes,
+		op.training.targets, op.training.scales,
+		op.bestAnchors, op.masks,
+		op.numClasses, op.dimensions, op.gridSize, op.ignoreTresh,
+	)
+
+	yoloTensor := &tensor.Dense{}
+	switch inputNumericType {
+	case Float32:
+		yoloTensor = tensor.New(tensor.WithShape(1, op.gridSize*op.gridSize*len(op.masks), 5+op.numClasses), tensor.Of(tensor.Float32), tensor.WithBacking(preparedYOLOout))
+	case Float64:
+		return nil, fmt.Errorf("Float64 not handled yet for YOLO tensor [Training mode]")
+	default:
+		return nil, fmt.Errorf("yoloOp supports only Float32/Float64 types for YOLO tensor [Training mode]")
+	}
+
+	return yoloTensor, nil
 }
 
 func convertTensorToFloat32(in tensor.Tensor) (input32 []float32, err error) {
@@ -401,10 +417,8 @@ func getBestAnchors_f32(target []float32, anchors []float32, masks []int, dims i
 	return bestAnchors
 }
 
-func prepareOutputYOLO_f32(input, yoloBoxes, target, anchors []float32, masks []int, numClasses, dims, gridSize int, ignoreTresh float32) []float32 {
+func prepareOutputYOLO_f32(input, yoloBoxes, target, scales []float32, bestAnchors [][]int, masks []int, numClasses, dims, gridSize int, ignoreTresh float32) []float32 {
 	yoloBBoxes := make([]float32, len(yoloBoxes))
-	gridSizeF32 := float32(gridSize)
-	bestAnchors := getBestAnchors_f32(target, anchors, masks, dims, gridSizeF32)
 	bestIous := getBestIOU_f32(yoloBoxes, target, numClasses, dims)
 	for i := 0; i < len(yoloBoxes); i = i + (5 + numClasses) {
 		if bestIous[i/(5+numClasses)][0] <= ignoreTresh {
@@ -413,30 +427,57 @@ func prepareOutputYOLO_f32(input, yoloBoxes, target, anchors []float32, masks []
 	}
 	for i := 0; i < len(bestAnchors); i++ {
 		if bestAnchors[i][0] != -1 {
-			scale := (2 - target[i*5+3]*target[i*5+4])
 			giInt := bestAnchors[i][1]
 			gjInt := bestAnchors[i][2]
-			gx := invsigm32(target[i*5+1]*gridSizeF32 - float32(giInt))
-			gy := invsigm32(target[i*5+2]*gridSizeF32 - float32(gjInt))
-			gw := math32.Log(target[i*5+3]/anchors[bestAnchors[i][0]] + 1e-16)
-			gh := math32.Log(target[i*5+4]/anchors[bestAnchors[i][0]+1] + 1e-16)
-			bboxIdx := gjInt*gridSize*len(masks) + giInt*len(masks) + bestAnchors[i][0]
-			yoloBBoxes[bboxIdx] = mseLoss32(gx, input[bboxIdx], scale)
-			yoloBBoxes[bboxIdx+1] = mseLoss32(gy, input[bboxIdx+1], scale)
-			yoloBBoxes[bboxIdx+2] = mseLoss32(gw, input[bboxIdx+2], scale)
-			yoloBBoxes[bboxIdx+3] = mseLoss32(gh, input[bboxIdx+3], scale)
-			yoloBBoxes[bboxIdx+4] = bceLoss32(1, yoloBoxes[bboxIdx+4])
-			for j := 0; j < numClasses; j++ {
-				if j == int(target[i]) {
-					yoloBBoxes[bboxIdx+5+j] = bceLoss32(1, yoloBoxes[bboxIdx+4])
-				} else {
-					yoloBBoxes[bboxIdx+5+j] = bceLoss32(0, yoloBoxes[bboxIdx+4])
-				}
+			boxi := gjInt*gridSize*(5+numClasses)*len(masks) + giInt*(5+numClasses)*len(masks) + bestAnchors[i][0]*(5+numClasses)
+			yoloBBoxes[boxi] = mseLoss32(target[boxi], input[boxi], scales[boxi])
+			yoloBBoxes[boxi+1] = mseLoss32(target[boxi+1], input[boxi+1], scales[boxi+1])
+			yoloBBoxes[boxi+2] = mseLoss32(target[boxi+2], input[boxi+2], scales[boxi+2])
+			yoloBBoxes[boxi+3] = mseLoss32(target[boxi+3], input[boxi+3], scales[boxi+3])
+			for j := 0; j < numClasses+1; j++ {
+				yoloBBoxes[boxi+4+j] = bceLoss32(target[boxi+4+j], yoloBoxes[boxi+4+j])
 			}
 		}
 	}
 	return yoloBBoxes
 }
+
+// func prepareOutputYOLO_f32(input, yoloBoxes, target, anchors []float32, masks []int, numClasses, dims, gridSize int, ignoreTresh float32) []float32 {
+// 	yoloBBoxes := make([]float32, len(yoloBoxes))
+// 	gridSizeF32 := float32(gridSize)
+// 	bestAnchors := getBestAnchors_f32(target, anchors, masks, dims, gridSizeF32)
+// 	bestIous := getBestIOU_f32(yoloBoxes, target, numClasses, dims)
+// 	for i := 0; i < len(yoloBoxes); i = i + (5 + numClasses) {
+// 		if bestIous[i/(5+numClasses)][0] <= ignoreTresh {
+// 			yoloBBoxes[i+4] = bceLoss32(0, yoloBoxes[i+4])
+// 		}
+// 	}
+// 	for i := 0; i < len(bestAnchors); i++ {
+// 		if bestAnchors[i][0] != -1 {
+// 			scale := (2 - target[i*5+3]*target[i*5+4])
+// 			giInt := bestAnchors[i][1]
+// 			gjInt := bestAnchors[i][2]
+// 			gx := invsigm32(target[i*5+1]*gridSizeF32 - float32(giInt))
+// 			gy := invsigm32(target[i*5+2]*gridSizeF32 - float32(gjInt))
+// 			gw := math32.Log(target[i*5+3]/anchors[bestAnchors[i][0]] + 1e-16)
+// 			gh := math32.Log(target[i*5+4]/anchors[bestAnchors[i][0]+1] + 1e-16)
+// 			bboxIdx := gjInt*gridSize*len(masks) + giInt*len(masks) + bestAnchors[i][0]
+// 			yoloBBoxes[bboxIdx] = mseLoss32(gx, input[bboxIdx], scale)
+// 			yoloBBoxes[bboxIdx+1] = mseLoss32(gy, input[bboxIdx+1], scale)
+// 			yoloBBoxes[bboxIdx+2] = mseLoss32(gw, input[bboxIdx+2], scale)
+// 			yoloBBoxes[bboxIdx+3] = mseLoss32(gh, input[bboxIdx+3], scale)
+// 			yoloBBoxes[bboxIdx+4] = bceLoss32(1, yoloBoxes[bboxIdx+4])
+// 			for j := 0; j < numClasses; j++ {
+// 				if j == int(target[i]) {
+// 					yoloBBoxes[bboxIdx+5+j] = bceLoss32(1, yoloBoxes[bboxIdx+4])
+// 				} else {
+// 					yoloBBoxes[bboxIdx+5+j] = bceLoss32(0, yoloBoxes[bboxIdx+4])
+// 				}
+// 			}
+// 		}
+// 	}
+// 	return yoloBBoxes
+// }
 
 func findIntElement(arr []int, ele int) int {
 	for i := range arr {
