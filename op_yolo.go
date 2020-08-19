@@ -14,12 +14,48 @@ import (
 // YoloTrainer Wrapper around yoloOP
 // It has method for setting desired bboxes as output of network
 type YoloTrainer struct {
-	yoloOP *yoloOp
+	op *yoloOp
 }
 
 // SetTarget sets []float32 as desired target for yoloOP
-func (yolo_trainer *YoloTrainer) SetTarget(target []float32) {
-	// @todo
+func (yt *YoloTrainer) SetTarget(target []float32) {
+	preparedNumOfElements := yt.op.gridSize * yt.op.gridSize * len(yt.op.masks) * (5 + yt.op.numClasses)
+	if yt.op.training == nil {
+		fmt.Println("Training parameters were not set. Initializing empty slices....")
+		yt.op.training = &yoloTraining{}
+	}
+	yt.op.training.scales = make([]float32, preparedNumOfElements)
+	yt.op.training.targets = make([]float32, preparedNumOfElements)
+	for i := range yt.op.training.scales {
+		yt.op.training.scales[i] = 1
+	}
+
+	gridSizeF32 := float32(yt.op.gridSize)
+	yt.op.bestAnchors = getBestAnchors_f32(target, yt.op.anchors, yt.op.masks, yt.op.dimensions, gridSizeF32)
+	for i := 0; i < len(yt.op.bestAnchors); i++ {
+		scale := (2 - target[i*5+3]*target[i*5+4])
+		giInt := yt.op.bestAnchors[i][1]
+		gjInt := yt.op.bestAnchors[i][2]
+		gx := invsigm32(target[i*5+1]*gridSizeF32 - float32(giInt))
+		gy := invsigm32(target[i*5+2]*gridSizeF32 - float32(gjInt))
+		gw := math32.Log(target[i*5+3]/yt.op.anchors[yt.op.bestAnchors[i][0]] + 1e-16)
+		gh := math32.Log(target[i*5+4]/yt.op.anchors[yt.op.bestAnchors[i][0]+1] + 1e-16)
+		bboxIdx := gjInt*yt.op.gridSize*(5+yt.op.numClasses)*len(yt.op.masks) + giInt*(5+yt.op.numClasses)*len(yt.op.masks) + yt.op.bestAnchors[i][0]*(5+yt.op.numClasses)
+		yt.op.training.scales[bboxIdx] = scale
+		yt.op.training.targets[bboxIdx] = gx
+		yt.op.training.scales[bboxIdx+1] = scale
+		yt.op.training.targets[bboxIdx+1] = gy
+		yt.op.training.scales[bboxIdx+2] = scale
+		yt.op.training.targets[bboxIdx+2] = gw
+		yt.op.training.scales[bboxIdx+3] = scale
+		yt.op.training.targets[bboxIdx+3] = gh
+		yt.op.training.targets[bboxIdx+4] = 1
+		for j := 0; j < yt.op.numClasses; j++ {
+			if j == int(target[i*5]) {
+				yt.op.training.targets[bboxIdx+5+j] = 1
+			}
+		}
+	}
 }
 
 type yoloOp struct {
@@ -31,7 +67,8 @@ type yoloOp struct {
 	trainMode   bool
 	gridSize    int
 
-	training *yoloTraining
+	bestAnchors [][]int
+	training    *yoloTraining
 }
 
 type yoloTraining struct {
