@@ -2,13 +2,12 @@ package gorgonia
 
 import (
 	"fmt"
-	"hash"
-	"image"
-
 	"github.com/chewxy/hm"
 	"github.com/chewxy/math32"
 	"github.com/pkg/errors"
 	"gorgonia.org/tensor"
+	"hash"
+	"image"
 )
 
 // YoloTrainer Wrapper around yoloOP
@@ -48,8 +47,9 @@ func (yt *YoloTrainer) SetTarget(target []float32) {
 		gjInt := yt.op.bestAnchors[i][2]
 		gx := invsigm32(target[i*5+1]*gridSizeF32 - float32(giInt))
 		gy := invsigm32(target[i*5+2]*gridSizeF32 - float32(gjInt))
-		gw := math32.Log(target[i*5+3]/yt.op.anchors[yt.op.bestAnchors[i][0]] + 1e-16)
-		gh := math32.Log(target[i*5+4]/yt.op.anchors[yt.op.bestAnchors[i][0]+1] + 1e-16)
+		bestAnchor := yt.op.masks[yt.op.bestAnchors[i][0]] * 2
+		gw := math32.Log(target[i*5+3]/yt.op.anchors[bestAnchor] + 1e-16)
+		gh := math32.Log(target[i*5+4]/yt.op.anchors[bestAnchor+1] + 1e-16)
 		bboxIdx := gjInt*yt.op.gridSize*(5+yt.op.numClasses)*len(yt.op.masks) + giInt*(5+yt.op.numClasses)*len(yt.op.masks) + yt.op.bestAnchors[i][0]*(5+yt.op.numClasses)
 		yt.op.training.scales[bboxIdx] = scale
 		yt.op.training.targets[bboxIdx] = gx
@@ -180,7 +180,23 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	}
 
 	inputNumericType := inputTensor.Dtype()
+	err = inputTensor.Reshape(batchSize, bboxAttributes*numAnchors, gridSize*gridSize)
+	if err != nil {
+		return nil, errors.Wrap(err, "Can't make reshape grid^2 for YOLO")
+	}
 
+	err = inputTensor.T(0, 2, 1)
+	if err != nil {
+		return nil, errors.Wrap(err, "Can't safely transponse input for YOLO")
+	}
+	err = inputTensor.Transpose()
+	if err != nil {
+		return nil, errors.Wrap(err, "Can't transponse input for YOLO")
+	}
+	err = inputTensor.Reshape(batchSize, gridSize*gridSize*numAnchors, bboxAttributes)
+	if err != nil {
+		return nil, errors.Wrap(err, "Can't reshape bbox for YOLO")
+	}
 	// Just inference without backpropagation
 	if !op.trainMode {
 		switch inputNumericType {
@@ -209,7 +225,7 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	}
 
 	if op.training == nil {
-		op.training = &yoloTraining{}
+		return nil, fmt.Errorf("Nil pointer on training params in yoloOp [Training mode]")
 	}
 	op.training.inputs, err = convertTensorToFloat32(inputTensor)
 	if err != nil {
@@ -226,7 +242,6 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 		op.bestAnchors, op.masks,
 		op.numClasses, op.dimensions, op.gridSize, op.ignoreTresh,
 	)
-
 	yoloTensor := &tensor.Dense{}
 	switch inputNumericType {
 	case Float32:
@@ -236,22 +251,21 @@ func (op *yoloOp) Do(inputs ...Value) (retVal Value, err error) {
 	default:
 		return nil, fmt.Errorf("yoloOp supports only Float32/Float64 types for YOLO tensor [Training mode]")
 	}
-
 	return yoloTensor, nil
 }
 
 func convertTensorToFloat32(in tensor.Tensor) (input32 []float32, err error) {
-	input32 = make([]float32, 0)
+	input32 = make([]float32, in.Shape().TotalSize())
 	in.Reshape(in.Shape().TotalSize())
 	for i := 0; i < in.Shape()[0]; i++ {
 		var buf interface{}
 		buf, err = in.At(i)
 		switch in.Dtype() {
 		case Float32:
-			input32 = append(input32, buf.(float32))
+			input32[i] = buf.(float32)
 			break
 		case Float64:
-			input32 = append(input32, float32(buf.(float64)))
+			input32[i] = float32(buf.(float64))
 			break
 		default:
 			return nil, fmt.Errorf("convertTensorToFloat32() supports only Float32/Float64 types of tensor")
@@ -265,24 +279,6 @@ func (op *yoloOp) evaluateYOLO_f32(input tensor.Tensor, batchSize, stride, grid,
 	inputNumericType := input.Dtype()
 	if inputNumericType != Float32 {
 		return nil, fmt.Errorf("evaluateYOLO_f32() called with input tensor of type %v. Float32 is required", inputNumericType)
-	}
-
-	err = input.Reshape(batchSize, bboxAttrs*numAnchors, grid*grid)
-	if err != nil {
-		return nil, errors.Wrap(err, "Can't make reshape grid^2 for YOLO")
-	}
-
-	err = input.T(0, 2, 1)
-	if err != nil {
-		return nil, errors.Wrap(err, "Can't safely transponse input for YOLO")
-	}
-	err = input.Transpose()
-	if err != nil {
-		return nil, errors.Wrap(err, "Can't transponse input for YOLO")
-	}
-	err = input.Reshape(batchSize, grid*grid*numAnchors, bboxAttrs)
-	if err != nil {
-		return nil, errors.Wrap(err, "Can't reshape bbox for YOLO")
 	}
 
 	// Activation of x, y, and objects via sigmoid function
@@ -464,7 +460,7 @@ func bceLoss32(target, pred float32) float32 {
 }
 
 func mseLoss32(target, pred, scale float32) float32 {
-	return math32.Pow(scale*(target-pred), 2) / 2.0
+	return (scale * (pred - target) * scale * (pred - target)) / 2.0
 }
 
 func invsigm32(target float32) float32 {
@@ -514,7 +510,7 @@ func (op *yoloDiffOp) Do(inputs ...Value) (Value, error) {
 	case tensor.Float32:
 		inGradData := inGrad.Data().([]float32)
 		outGradData := output.Data().([]float32)
-		op.f32(inGradData, outGradData, op.training.scales, op.training.inputs, op.training.targets, op.training.bboxes)
+		op.f32(inGradData, outGradData)
 		break
 	case tensor.Float64:
 		return nil, fmt.Errorf("yoloDiffOp for Float64 is not implemented yet")
@@ -541,42 +537,46 @@ func (op *yoloDiffOp) Do(inputs ...Value) (Value, error) {
 	return inGrad, nil
 }
 
-func (op *yoloDiffOp) f32(inGradData, outGradData, scales, inputs, targets, bboxes []float32) {
+func (op *yoloDiffOp) f32(inGradData, outGradData []float32) {
 	for i := range inGradData {
 		inGradData[i] = 0
 	}
 	for i := 0; i < len(outGradData); i = i + 5 + op.numClasses {
 		for j := 0; j < 4; j++ {
-			inGradData[i+j] = outGradData[i+j] * (scales[i+j] * scales[i+j] * (inputs[i+j] - targets[i+j]))
+
+			inGradData[i+j] = outGradData[i+j] * op.training.scales[i+j] * op.training.scales[i+j] * (op.training.inputs[i+j] - op.training.targets[i+j])
 		}
 		for j := 4; j < 5+op.numClasses; j++ {
 			if outGradData[i+j] != 0 {
-				if targets[i+j] == 0 {
-					inGradData[i+j] = outGradData[i+j] * (bboxes[i+j])
+				if op.training.targets[i+j] == 0 {
+					inGradData[i+j] = outGradData[i+j] * op.training.bboxes[i+j]
 				} else {
-					inGradData[i+j] = outGradData[i+j] * (1 - bboxes[i+j])
+					inGradData[i+j] = outGradData[i+j] * (1 - op.training.bboxes[i+j])
 				}
 			}
 		}
+
 	}
 }
-func (op *yoloDiffOp) f64(inGradData, outGradData, scales, inputs, targets, bboxes []float64) {
+func (op *yoloDiffOp) f64(inGradData, outGradData []float64) {
 	for i := range inGradData {
 		inGradData[i] = 0
 	}
 	for i := 0; i < len(outGradData); i = i + 5 + op.numClasses {
 		for j := 0; j < 4; j++ {
-			inGradData[i+j] = outGradData[i+j] * (scales[i+j] * scales[i+j] * (inputs[i+j] - targets[i+j]))
+
+			inGradData[i+j] = outGradData[i+j] * float64(op.training.scales[i+j]*op.training.scales[i+j]*(op.training.inputs[i+j]-op.training.targets[i+j]))
 		}
 		for j := 4; j < 5+op.numClasses; j++ {
 			if outGradData[i+j] != 0 {
-				if targets[i+j] == 0 {
-					inGradData[i+j] = outGradData[i+j] * (bboxes[i+j])
+				if op.training.targets[i+j] == 0 {
+					inGradData[i+j] = outGradData[i+j] * float64(op.training.bboxes[i+j])
 				} else {
-					inGradData[i+j] = outGradData[i+j] * (1 - bboxes[i+j])
+					inGradData[i+j] = outGradData[i+j] * float64((1 - op.training.bboxes[i+j]))
 				}
 			}
 		}
+
 	}
 }
 
