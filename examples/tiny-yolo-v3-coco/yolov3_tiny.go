@@ -36,7 +36,7 @@ func (net *YOLOv3) SetTarget(target []float32) error {
 		return fmt.Errorf("Model has not any YOLO layers")
 	}
 	for i := range net.training {
-		net.training[i].SetTarget(target)
+		(*net.training[i]).SetTarget(target)
 	}
 	return nil
 }
@@ -47,7 +47,7 @@ func (net *YOLOv3) ActivateTrainingMode() error {
 		return fmt.Errorf("Model doesn't contain any YOLO layer to activate training mode")
 	}
 	for i := range net.training {
-		net.training[i].ActivateTrainingMode()
+		(*net.training[i]).ActivateTrainingMode()
 	}
 	return nil
 }
@@ -58,7 +58,7 @@ func (net *YOLOv3) DisableTrainingMode() error {
 		return fmt.Errorf("Model doesn't contain any YOLO layer to disable training mode")
 	}
 	for i := range net.training {
-		net.training[i].DisableTrainingMode()
+		(*net.training[i]).DisableTrainingMode()
 	}
 	return nil
 }
@@ -387,7 +387,7 @@ func NewYoloV3Tiny(g *gorgonia.ExprGraph, input *gorgonia.Node, classesNumber, b
 					inputSize:      inputS[2],
 					classesNum:     classesNumber,
 					ignoreThresh:   float32(ignoreThresh64),
-					yoloTrainer:    &gorgonia.YoloTrainer{},
+					//yoloTrainer:    &gorgonia.YoloTrainer{},
 				}
 
 				var l layerN = &yoloL
